@@ -1,0 +1,5 @@
+{
+  "name": "PDF編輯工具",
+  "description": "一個功能強大的客戶端 PDF 編輯器，可分割、合併、旋轉和壓縮您的 PDF 檔案。",
+  "requestFramePermissions": []
+}
