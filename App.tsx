@@ -1,11 +1,9 @@
 
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
-// FIX: The error on `this.version(1)` was due to a schema mismatch.
-// The `StoredProject` type was missing the `timestamp` property defined in the schema.
-// By adding `timestamp` to `StoredProject` and related types, the inconsistency is resolved.
+// FIX: Dexie is a default export, not a named export. This resolves the error on `this.version(1)`.
+// Fix: Import `Table` type directly from dexie and remove the unused `DexieType` alias. This resolves the error on `this.version(1)`.
 import Dexie, { type Table } from 'dexie';
 import { ProjectMetadata, StoredProject, EditorPageProps, EditorPageState, CompressionQuality, EditorObject, DrawingTool, PageData } from './types';
 
@@ -116,14 +114,11 @@ const ResetZoomIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 // --- Dexie DB Service ---
 class ProjectDB extends Dexie {
+    // Fix: Use the `Table` type directly from 'dexie' for correct type definition.
     projects!: Table<StoredProject, string>;
 
     constructor() {
         super('PDFEditorDB');
-        // FIX: The error "Property 'version' does not exist on type 'ProjectDB'" was caused by an inconsistency
-        // between the StoredProject type and the schema. The `timestamp` property was used here and for sorting,
-        // but it was missing from the StoredProject interface in types.ts.
-        // Aligning the type with the schema resolves the error.
         this.version(1).stores({
             projects: 'id, name, timestamp', // Primary key and indexed properties
         });
@@ -368,11 +363,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const handleSaveAndDownload = async () => {
         fileMenu.close();
-        // FIX: Construct the project object from the current editor state to ensure all data,
-        // including the timestamp, is passed correctly for saving.
         const projectToSave: StoredProject = {
-            ...state,
+            id: state.id,
             name: projectName,
+            pages: state.pages,
         };
         await onSave(projectToSave, projectName);
         setIsDirty(false);
@@ -1218,12 +1212,9 @@ const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }>
     }, []);
 
     const createNewProject = (name: string, pages: { id: string; data: Blob }[]) => {
-        // FIX: Add a timestamp to new projects to align with the database schema and enable sorting.
-        const now = Date.now();
         const newProject: StoredProject = {
-            id: `proj_${now}`,
+            id: `proj_${Date.now()}`,
             name,
-            timestamp: now,
             pages: pages.map(p => ({ ...p, rotation: 0, objects: [] })),
         };
         onProjectSelect(newProject);
@@ -1388,8 +1379,7 @@ const App: React.FC = () => {
   const [activeProject, setActiveProject] = useState<StoredProject | null>(null);
 
   const handleSaveProject = async (project: StoredProject, newName?: string) => {
-    // FIX: Always update the timestamp on save to ensure projects are sorted by most recent activity.
-    const finalProject = { ...project, name: newName || project.name, timestamp: Date.now() };
+    const finalProject = { ...project, name: newName || project.name };
     await dbService.saveProject(finalProject);
     // After saving, stay on the editor page. The state is already in sync.
   };
