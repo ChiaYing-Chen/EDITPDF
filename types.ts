@@ -22,7 +22,7 @@ export interface EditorObject {
 
 export interface PageData {
     id: string;
-    dataUrl: string;
+    data: Blob;
     rotation: 0 | 90 | 180 | 270;
     objects: EditorObject[];
 }
@@ -35,7 +35,7 @@ export interface StoredProject {
 
 export interface EditorPageProps {
   project: StoredProject;
-  onSave: (project: StoredProject, newName?: string) => void;
+  onSave: (project: StoredProject, newName?: string) => Promise<void>;
   onClose: () => void;
 }
 

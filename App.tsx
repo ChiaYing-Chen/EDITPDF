@@ -1,31 +1,14 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
-import { ProjectMetadata, StoredProject, EditorPageProps, EditorPageState, CompressionQuality, EditorObject, DrawingTool } from './types';
+// FIX: Dexie is a default export, not a named export. This resolves the error on `this.version(1)`.
+// Fix: Import `Table` type directly from dexie and remove the unused `DexieType` alias. This resolves the error on `this.version(1)`.
+import Dexie, { type Table } from 'dexie';
+import { ProjectMetadata, StoredProject, EditorPageProps, EditorPageState, CompressionQuality, EditorObject, DrawingTool, PageData } from './types';
 
 // Configure the PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
-
-
-// --- Helper Functions ---
-const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = (error) => reject(error);
-  });
-};
-
-const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return window.btoa(binary);
-};
 
 
 // --- Icons ---
@@ -129,43 +112,40 @@ const ResetZoomIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 
-// --- LocalStorage Service ---
-const projectService = {
-  getProjectsMetadata: (): ProjectMetadata[] => {
-    const meta = localStorage.getItem('pdf_projects_meta');
-    return meta ? JSON.parse(meta) : [];
-  },
-  getProjectData: (id: string): StoredProject | null => {
-    const data = localStorage.getItem(`pdf_project_${id}`);
-    return data ? JSON.parse(data) : null;
-  },
-  saveProject: (project: StoredProject): ProjectMetadata[] => {
-    const metadataList = projectService.getProjectsMetadata();
-    const existingMetaIndex = metadataList.findIndex(p => p.id === project.id);
-    const newMeta = {
-      id: project.id,
-      name: project.name,
-      timestamp: Date.now(),
-      pageCount: project.pages.length,
-    };
+// --- Dexie DB Service ---
+class ProjectDB extends Dexie {
+    // Fix: Use the `Table` type directly from 'dexie' for correct type definition.
+    projects!: Table<StoredProject, string>;
 
-    if (existingMetaIndex > -1) {
-      metadataList[existingMetaIndex] = newMeta;
-    } else {
-      metadataList.push(newMeta);
+    constructor() {
+        super('PDFEditorDB');
+        this.version(1).stores({
+            projects: 'id, name, timestamp', // Primary key and indexed properties
+        });
     }
-    
-    localStorage.setItem('pdf_projects_meta', JSON.stringify(metadataList));
-    localStorage.setItem(`pdf_project_${project.id}`, JSON.stringify(project));
-    return metadataList;
-  },
-  deleteProject: (id: string): ProjectMetadata[] => {
-    let metadataList = projectService.getProjectsMetadata();
-    metadataList = metadataList.filter(p => p.id !== id);
-    localStorage.setItem('pdf_projects_meta', JSON.stringify(metadataList));
-    localStorage.removeItem(`pdf_project_${id}`);
-    return metadataList;
-  }
+}
+
+const db = new ProjectDB();
+
+const dbService = {
+    getProjectsMetadata: async (): Promise<ProjectMetadata[]> => {
+        const projects = await db.projects.orderBy('timestamp').reverse().toArray();
+        return projects.map(({ id, name, timestamp, pages }) => ({
+            id,
+            name,
+            timestamp,
+            pageCount: pages.length,
+        }));
+    },
+    getProjectData: (id: string): Promise<StoredProject | undefined> => {
+        return db.projects.get(id);
+    },
+    saveProject: (project: StoredProject): Promise<string> => {
+        return db.projects.put(project);
+    },
+    deleteProject: (id: string): Promise<void> => {
+        return db.projects.delete(id);
+    }
 };
 
 // --- Generic Hook for Dropdowns ---
@@ -208,6 +188,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [historyIndex, setHistoryIndex] = useState(0);
     const state = history[historyIndex]; // Derived state
 
+    const [pageUrlCache, setPageUrlCache] = useState<Map<string, string>>(new Map());
+
     const [selectedPages, setSelectedPages] = useState<Set<string>>(new Set(project.pages.length > 0 ? [project.pages[0].id] : []));
     const [draggedId, setDraggedId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -249,6 +231,21 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const selectedObject = viewedPage?.objects.find(o => o.id === selectedObjectId) || null;
     const isDrawingToolActive = activeTool && activeTool !== 'move';
 
+    useEffect(() => {
+        const urls = new Map<string, string>();
+        for (const page of state.pages) {
+            if (page.data instanceof Blob) {
+                urls.set(page.id, URL.createObjectURL(page.data));
+            }
+        }
+        setPageUrlCache(urls);
+
+        return () => {
+            for (const url of urls.values()) {
+                URL.revokeObjectURL(url);
+            }
+        };
+    }, [state]);
 
     const updateState = (newState: EditorPageState, options: { keepSelection?: boolean } = {}) => {
         const newHistory = history.slice(0, historyIndex + 1);
@@ -289,12 +286,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         try {
             const pdfDoc = await PDFDocument.create();
             for (const page of pagesToExport) {
-                // Flatten drawings for export
                 const tempCanvas = document.createElement('canvas');
                 const tempCtx = tempCanvas.getContext('2d');
                 const img = new Image();
                 
-                const flattenedDataUrl = await new Promise<string>((resolve) => {
+                const flattenedDataUrl = await new Promise<string>((resolve, reject) => {
                     img.onload = () => {
                         tempCanvas.width = img.naturalWidth;
                         tempCanvas.height = img.naturalHeight;
@@ -306,15 +302,19 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                         (page.objects || []).forEach(obj => {
                             drawObject(tempCtx!, obj, { scaleX, scaleY });
                         });
-                        resolve(tempCanvas.toDataURL('image/jpeg'));
+                        resolve(tempCanvas.toDataURL('image/jpeg', 0.92));
                     };
-                    img.src = page.dataUrl;
+                    img.onerror = () => reject(new Error('Image failed to load for PDF generation'));
+                    const pageUrl = pageUrlCache.get(page.id);
+                    if (!pageUrl) {
+                        reject(new Error(`Could not find URL for page ${page.id}`));
+                        return;
+                    }
+                    img.src = pageUrl;
                 });
 
-
-                const isPng = flattenedDataUrl.startsWith('data:image/png');
                 const imageBytes = await fetch(flattenedDataUrl).then(res => res.arrayBuffer());
-                const image = await (isPng ? pdfDoc.embedPng(imageBytes) : pdfDoc.embedJpg(imageBytes));
+                const image = await pdfDoc.embedJpg(imageBytes);
 
                 const { width, height } = image;
                 const isRotated = page.rotation === 90 || page.rotation === 270;
@@ -363,16 +363,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const handleSaveAndDownload = async () => {
         fileMenu.close();
-        // 1. Save project state to LocalStorage
         const projectToSave: StoredProject = {
             id: state.id,
             name: projectName,
-            pages: state.pages.map(({ id, dataUrl, rotation, objects }) => ({ id, dataUrl, rotation, objects })),
+            pages: state.pages,
         };
-        onSave(projectToSave, projectName);
+        await onSave(projectToSave, projectName);
         setIsDirty(false);
 
-        // 2. Generate and Download PDF
         const success = await generatePdf(state.pages, `${projectName.replace(/\.pdf$/i, '') || 'document'}.pdf`);
 
         if (success) {
@@ -1099,7 +1097,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             <div className="flex-grow flex overflow-hidden">
                 <aside 
                     ref={sidebarRef}
-                    className="w-1/6 bg-gray-800 p-2 overflow-y-auto"
+                    className="w-56 flex-shrink-0 bg-gray-800 p-2 overflow-y-auto"
                     onWheel={handleSidebarWheel}
                 >
                     <div className="sticky top-0 bg-gray-800 bg-opacity-75 backdrop-blur-sm z-10 flex justify-between items-center mb-2 p-2 rounded-lg shadow-lg">
@@ -1129,20 +1127,20 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 onDragOver={(e) => e.preventDefault()}
                                 onDrop={() => handleDrop(page.id)}
                                 onDragEnd={() => setDraggedId(null)}
-                                className={`relative aspect-[_7_/_10_] group cursor-pointer border-2 ${selectedPages.has(page.id) ? 'border-blue-500' : 'border-transparent'} ${draggedId === page.id ? 'dragging' : ''}`}
+                                className={`relative aspect-square group cursor-pointer border-2 bg-gray-900/50 rounded-md ${selectedPages.has(page.id) ? 'border-blue-500' : 'border-transparent'} ${draggedId === page.id ? 'dragging' : ''}`}
                                 onClick={() => handleThumbnailClick(page.id)}
                             >
-                                <img src={page.dataUrl} className="w-full h-full object-contain rounded" style={{transform: `rotate(${page.rotation}deg)`}} />
+                                <img src={pageUrlCache.get(page.id)} className="w-full h-full object-contain rounded" style={{transform: `rotate(${page.rotation}deg)`}} />
                             </div>
                         ))}
                     </div>
                 </aside>
                 
-                <main className="w-5/6 p-4 flex flex-col bg-gray-900 relative" onWheel={handleMainViewWheel}>
+                <main className="flex-1 p-4 flex flex-col bg-gray-900 relative" onWheel={handleMainViewWheel}>
                     <div className="flex-grow overflow-hidden flex items-center justify-center">
                         {viewedPage ? (
                             <div className="relative touch-none" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transition: 'transform 0.2s ease-in-out', transformOrigin: 'center center' }}>
-                               <img ref={imageRef} src={viewedPage.dataUrl} className="max-w-full max-h-full object-contain shadow-lg transition-transform duration-200 pointer-events-none" style={{transform: `rotate(${viewedPage.rotation}deg)`}}/>
+                               <img ref={imageRef} src={pageUrlCache.get(viewedPage.id)} className="max-w-full max-h-full object-contain shadow-lg transition-transform duration-200 pointer-events-none" style={{transform: `rotate(${viewedPage.rotation}deg)`}}/>
                                <canvas
                                     ref={canvasRef}
                                     className={`absolute top-0 left-0 pointer-events-auto z-10`}
@@ -1206,10 +1204,14 @@ const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }>
     const pdfInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        setProjects(projectService.getProjectsMetadata().sort((a,b) => b.timestamp - a.timestamp));
+        const fetchMeta = async () => {
+            const meta = await dbService.getProjectsMetadata();
+            setProjects(meta);
+        };
+        fetchMeta();
     }, []);
 
-    const createNewProject = (name: string, pages: { id: string; dataUrl: string }[]) => {
+    const createNewProject = (name: string, pages: { id: string; data: Blob }[]) => {
         const newProject: StoredProject = {
             id: `proj_${Date.now()}`,
             name,
@@ -1224,12 +1226,10 @@ const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }>
         setIsLoading(true);
         try {
             const imageFiles = [...files].filter((f) => f.type.startsWith('image/'));
-            const pages = await Promise.all(
-                imageFiles.map(async (file, index) => ({
-                    id: `page_${Date.now()}_${index}`,
-                    dataUrl: await fileToBase64(file),
-                }))
-            );
+            const pages = imageFiles.map((file, index) => ({
+                id: `page_${Date.now()}_${index}`,
+                data: file, // Store the File object (which is a Blob) directly
+            }));
             createNewProject(`新專案-${new Date().toLocaleDateString()}`, pages);
         } catch (error) {
             console.error("Error importing photos:", error);
@@ -1250,12 +1250,12 @@ const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }>
         try {
             const pdfBytes = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: pdfBytes }).promise;
-            const pages = [];
+            const pagesData = [];
             const pageCount = pdf.numPages;
 
             for (let i = 1; i <= pageCount; i++) {
                 const page = await pdf.getPage(i);
-                const scale = 3.0; // Increased scale for higher resolution
+                const scale = 2.0; // Adjusted scale, balance between quality and size
                 const viewport = page.getViewport({ scale });
 
                 const canvas = document.createElement('canvas');
@@ -1273,12 +1273,20 @@ const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }>
                 };
                 await page.render(renderContext).promise;
 
-                pages.push({
+                const blob = await new Promise<Blob | null>(resolve => 
+                    canvas.toBlob(resolve, 'image/jpeg', CompressionQuality.HIGH)
+                );
+
+                if (!blob) {
+                    throw new Error('Canvas toBlob failed');
+                }
+
+                pagesData.push({
                     id: `page_${Date.now()}_${i - 1}`,
-                    dataUrl: canvas.toDataURL('image/png'), // Switched to PNG for lossless quality
+                    data: blob,
                 });
             }
-            createNewProject(file.name.replace(/\.pdf$/i, ''), pages);
+            createNewProject(file.name.replace(/\.pdf$/i, ''), pagesData);
         } catch (error) {
             console.error("Error importing PDF:", error);
             if (error instanceof Error) {
@@ -1291,8 +1299,8 @@ const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }>
         }
     };
 
-    const loadProject = (id: string) => {
-        const projectData = projectService.getProjectData(id);
+    const loadProject = async (id: string) => {
+        const projectData = await dbService.getProjectData(id);
         if (projectData) {
             onProjectSelect(projectData);
         } else {
@@ -1300,9 +1308,10 @@ const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }>
         }
     };
 
-    const deleteProject = (id: string) => {
+    const deleteProject = async (id: string) => {
       if (window.confirm("確定要刪除這個專案嗎？此操作無法復原。")) {
-        const updatedMeta = projectService.deleteProject(id);
+        await dbService.deleteProject(id);
+        const updatedMeta = await dbService.getProjectsMetadata();
         setProjects(updatedMeta);
       }
     };
@@ -1369,10 +1378,10 @@ const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }>
 const App: React.FC = () => {
   const [activeProject, setActiveProject] = useState<StoredProject | null>(null);
 
-  const handleSaveProject = (project: StoredProject, newName?: string) => {
+  const handleSaveProject = async (project: StoredProject, newName?: string) => {
     const finalProject = { ...project, name: newName || project.name };
-    projectService.saveProject(finalProject);
-    // After saving, stay on the editor page.
+    await dbService.saveProject(finalProject);
+    // After saving, stay on the editor page. The state is already in sync.
   };
 
   const handleCloseEditor = () => {
