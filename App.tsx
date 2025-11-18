@@ -195,8 +195,9 @@ type EditorTool = DrawingTool | 'move' | null;
 type Point = { x: number; y: number };
 type SelectionMode = 'view' | 'select';
 type ActionState = {
-    type: 'idle' | 'drawing' | 'moving' | 'resizing';
-    startPoint?: Point;
+    type: 'idle' | 'drawing' | 'moving' | 'resizing' | 'panning';
+    startPoint?: Point; // canvas coords for drawing/moving/resizing
+    panStartPoint?: Point; // screen coords for panning
     initialObject?: EditorObject;
     handle?: string;
 };
@@ -216,6 +217,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [selectionMode, setSelectionMode] = useState<SelectionMode>('view');
     const [viewedPageId, setViewedPageId] = useState<string | null>(state.pages[0]?.id || null);
     const [zoom, setZoom] = useState(1);
+    const [pan, setPan] = useState({ x: 0, y: 0 });
 
     // Drawing state
     const [activeTool, setActiveTool] = useState<EditorTool>('move');
@@ -236,12 +238,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const textInputRef = useRef<HTMLTextAreaElement>(null);
     const sidebarRef = useRef<HTMLElement>(null);
     const thumbnailRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+    const pinchState = useRef({ isPinching: false, initialDist: 0, initialZoom: 1 });
 
     const fileMenu = useDropdown();
     const rotateMenu = useDropdown();
     const splitMenu = useDropdown();
     
     const viewedPage = state.pages.find(p => p.id === viewedPageId) || state.pages[0];
+    const viewedPageIndex = state.pages.findIndex(p => p.id === viewedPageId);
     const selectedObject = viewedPage?.objects.find(o => o.id === selectedObjectId) || null;
     const isDrawingToolActive = activeTool && activeTool !== 'move';
 
@@ -469,59 +473,33 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 5));
     const handleZoomOut = () => setZoom(z => Math.max(z - 0.1, 0.2));
-    const handleResetZoom = () => setZoom(1);
-
-    const throttle = (func: (...args: any[]) => void, limit: number) => {
-        let inThrottle: boolean;
-        return function(this: any, ...args: any[]) {
-            const context = this;
-            if (!inThrottle) {
-                func.apply(context, args);
-                inThrottle = true;
-                setTimeout(() => inThrottle = false, limit);
-            }
-        }
+    const handleResetZoom = () => {
+      setZoom(1);
+      setPan({x: 0, y: 0});
     };
-
-    const handleSidebarScroll = useCallback(() => {
-        if (selectionMode !== 'view' || !sidebarRef.current) return;
-
-        const sidebar = sidebarRef.current;
-        const viewportCenter = sidebar.scrollTop + sidebar.clientHeight / 2;
-        const sidebarScrollTop = sidebar.scrollTop;
-        const sidebarScrollBottom = sidebarScrollTop + sidebar.clientHeight;
-
-        let closestPageId: string | null = null;
-        let minDistance = Infinity;
-
-        // Iterate over fully visible thumbnails and find the one closest to the center
-        state.pages.forEach(page => {
-            const thumbnailEl = thumbnailRefs.current.get(page.id);
-            if (thumbnailEl) {
-                const thumbTop = thumbnailEl.offsetTop;
-                const thumbBottom = thumbTop + thumbnailEl.offsetHeight;
-
-                // Check if the thumbnail is fully visible (with 1px tolerance)
-                if (thumbTop >= sidebarScrollTop - 1 && thumbBottom <= sidebarScrollBottom + 1) {
-                    const thumbnailCenter = thumbTop + thumbnailEl.offsetHeight / 2;
-                    const distance = Math.abs(viewportCenter - thumbnailCenter);
-
-                    if (distance < minDistance) {
-                        minDistance = distance;
-                        closestPageId = page.id;
-                    }
-                }
-            }
-        });
-
-        if (closestPageId && closestPageId !== viewedPageId) {
-            setViewedPageId(closestPageId);
-            setSelectedPages(new Set([closestPageId]));
+    
+    // --- Interaction Handlers ---
+    const handleSidebarWheel = useCallback((e: React.WheelEvent) => {
+        e.stopPropagation(); // Prevent main view from zooming
+        const direction = e.deltaY > 0 ? 1 : -1;
+        const currentIndex = state.pages.findIndex(p => p.id === viewedPageId);
+        if (currentIndex === -1) return;
+        const nextIndex = Math.max(0, Math.min(state.pages.length - 1, currentIndex + direction));
+        const nextPage = state.pages[nextIndex];
+        if (nextPage && nextPage.id !== viewedPageId) {
+            setViewedPageId(nextPage.id);
+            setSelectedPages(new Set([nextPage.id]));
+            setTimeout(() => {
+                thumbnailRefs.current.get(nextPage.id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 0);
         }
-    }, [selectionMode, state.pages, viewedPageId]);
+    }, [state.pages, viewedPageId]);
 
-    const throttledScrollHandler = useCallback(throttle(handleSidebarScroll, 100), [handleSidebarScroll]);
-
+    const handleMainViewWheel = (e: React.WheelEvent) => {
+        e.preventDefault();
+        const scaleAmount = e.deltaY * -0.001;
+        setZoom(z => Math.max(0.2, Math.min(z + scaleAmount, 5)));
+    };
 
     // --- Drawing Logic ---
     const getObjectAtPoint = (point: Point, objects: EditorObject[]): EditorObject | null => {
@@ -573,18 +551,20 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         return null;
     };
 
-    const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>): Point => {
+    const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>): Point => {
         const canvas = canvasRef.current;
         const image = imageRef.current;
         if (!canvas || !image) return { x: 0, y: 0 };
     
-        const rect = image.getBoundingClientRect();
+        const rect = image.getBoundingClientRect(); // This rect INCLUDES pan and zoom transforms.
+        
+        const interactionPoint = 'touches' in e ? e.touches[0] : e;
+        const mouseX = interactionPoint.clientX;
+        const mouseY = interactionPoint.clientY;
+
         const imageCenterX = rect.left + rect.width / 2;
         const imageCenterY = rect.top + rect.height / 2;
-    
-        const mouseX = e.clientX;
-        const mouseY = e.clientY;
-    
+        
         // Vector from image center to mouse
         let vecX = mouseX - imageCenterX;
         let vecY = mouseY - imageCenterY;
@@ -614,7 +594,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         
         const startPoint = getCanvasCoordinates(e);
 
-        if (activeTool && activeTool !== 'move') {
+        if (isDrawingToolActive) {
             if (activeTool === 'text') {
                 setSelectedObjectId(null);
                 setTextInput({ show: true, x: startPoint.x, y: startPoint.y, value: '' });
@@ -634,17 +614,24 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
                 } else {
                     setSelectedObjectId(null);
-                    setActionState({ type: 'idle' });
+                    setActionState({ type: 'panning', panStartPoint: { x: e.clientX, y: e.clientY } });
                 }
             }
         }
     };
 
     const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (actionState.type === 'panning' && actionState.panStartPoint) {
+            const dx = e.clientX - actionState.panStartPoint.x;
+            const dy = e.clientY - actionState.panStartPoint.y;
+            setPan(p => ({ x: p.x + dx, y: p.y + dy }));
+            setActionState(s => ({ ...s, panStartPoint: { x: e.clientX, y: e.clientY } }));
+            return;
+        }
+
         if (actionState.type === 'idle') return;
         
         const currentPoint = getCanvasCoordinates(e);
-        
         const { type, startPoint } = actionState;
 
         if (type === 'drawing' && startPoint) {
@@ -688,12 +675,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     };
 
     const handleCanvasMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (actionState.type === 'panning') {
+            setActionState({ type: 'idle' });
+            return;
+        }
         if (actionState.type === 'idle') return;
 
         const endPoint = getCanvasCoordinates(e);
-
         const { type, startPoint } = actionState;
-        
         let newObjects = [...(viewedPage?.objects || [])];
 
         if (type === 'drawing' && startPoint && (startPoint.x !== endPoint.x || startPoint.y !== endPoint.y)) {
@@ -720,6 +709,69 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         
         setActionState({ type: 'idle' });
         setPreviewObject(null);
+    };
+
+    const handleCanvasTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+        if (e.touches.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            pinchState.current = { isPinching: true, initialDist: dist, initialZoom: zoom };
+            setActionState({type: 'idle'}); // End other actions
+        } else if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            const startPoint = getCanvasCoordinates(e);
+
+            if (isDrawingToolActive) {
+                // Simplified: Touch doesn't support text input for now
+                if (activeTool !== 'text') {
+                    setActionState({ type: 'drawing', startPoint });
+                    setSelectedObjectId(null);
+                }
+            } else {
+                const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
+                if (objectToSelect) {
+                    setSelectedObjectId(objectToSelect.id);
+                    setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
+                } else {
+                    setSelectedObjectId(null);
+                    setActionState({ type: 'panning', panStartPoint: { x: touch.clientX, y: touch.clientY } });
+                }
+            }
+        }
+    };
+    
+    const handleCanvasTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+        if (pinchState.current.isPinching && e.touches.length === 2) {
+            e.preventDefault();
+            const newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            const scale = (newDist / pinchState.current.initialDist) * pinchState.current.initialZoom;
+            setZoom(Math.max(0.2, Math.min(scale, 5)));
+        } else if (actionState.type === 'panning' && actionState.panStartPoint && e.touches.length === 1) {
+            const touch = e.touches[0];
+            const dx = touch.clientX - actionState.panStartPoint.x;
+            const dy = touch.clientY - actionState.panStartPoint.y;
+            setPan(p => ({ x: p.x + dx, y: p.y + dy }));
+            setActionState(s => ({ ...s, panStartPoint: { x: touch.clientX, y: touch.clientY } }));
+        } else if ((actionState.type === 'drawing' || actionState.type === 'moving') && e.touches.length === 1) {
+             const currentPoint = getCanvasCoordinates(e);
+             const { type, startPoint, initialObject } = actionState;
+             if (type === 'drawing' && startPoint) {
+                 setPreviewObject({ id: 'preview', type: activeTool as DrawingTool, sp: startPoint, ep: currentPoint, color: drawingColor, strokeWidth });
+             } else if (type === 'moving' && initialObject) {
+                 const dx = currentPoint.x - startPoint!.x;
+                 const dy = currentPoint.y - startPoint!.y;
+                 const { sp, ep } = initialObject;
+                 setPreviewObject({ ...initialObject, sp: { x: sp.x + dx, y: sp.y + dy }, ep: { x: ep.x + dx, y: ep.y + dy } });
+             }
+        }
+    };
+
+    const handleCanvasTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+        if (pinchState.current.isPinching) {
+            pinchState.current.isPinching = false;
+        } else {
+            handleCanvasMouseUp({} as React.MouseEvent<HTMLCanvasElement>); // Simulate mouse up
+        }
     };
     
     const handleTextBlur = () => {
@@ -887,22 +939,24 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 ctx.strokeRect(pos.x - 4, pos.y - 4, 8, 8);
             });
         }
-    }, [viewedPage, selectedObjectId, selectedObject, previewObject, zoom]);
+    }, [viewedPage, selectedObjectId, selectedObject, previewObject, zoom, pan]);
 
     // Update cursor based on action
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
-        if (activeTool && activeTool !== 'move') {
+        if (isDrawingToolActive) {
             canvas.style.cursor = 'crosshair';
         } else if (actionState.type === 'moving') {
             canvas.style.cursor = 'grabbing';
         } else if (actionState.type === 'resizing') {
             canvas.style.cursor = 'nwse-resize'; // Simplified for now
+        } else if (actionState.type === 'panning') {
+            canvas.style.cursor = 'grabbing';
         } else {
-            canvas.style.cursor = 'default';
+            canvas.style.cursor = 'grab';
         }
-    }, [activeTool, actionState.type]);
+    }, [activeTool, actionState.type, isDrawingToolActive]);
     
     return (
         <div className="flex flex-col h-screen">
@@ -914,7 +968,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             )}
             <header className="bg-gray-800 shadow-md flex items-center sticky top-0 z-20 h-20 px-3">
                 <div className="w-1/6 flex-shrink-0">
-                    <span className="text-white text-xl font-bold px-2 py-1 truncate">{projectName}</span>
+                    <span className="text-white text-sm font-bold px-2 py-1 truncate">{projectName}</span>
                 </div>
 
                 <div className="flex-grow flex items-center">
@@ -1045,11 +1099,16 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             <div className="flex-grow flex overflow-hidden">
                 <aside 
                     ref={sidebarRef}
-                    onScroll={throttledScrollHandler}
                     className="w-1/6 bg-gray-800 p-2 overflow-y-auto"
+                    onWheel={handleSidebarWheel}
                 >
-                    <div className="flex justify-between items-center mb-2 p-2">
-                        <h2 className="text-lg font-semibold">頁面 ({state.pages.length})</h2>
+                    <div className="sticky top-0 bg-gray-800 bg-opacity-75 backdrop-blur-sm z-10 flex justify-between items-center mb-2 p-2 rounded-lg shadow-lg">
+                        <h2 className="text-sm font-semibold">
+                            {selectionMode === 'view'
+                                ? `頁面 (${viewedPageIndex > -1 ? viewedPageIndex + 1 : 0}/${state.pages.length})`
+                                : `已選取 ${selectedPages.size}/${state.pages.length} 頁`
+                            }
+                        </h2>
                         <button 
                             onClick={() => setSelectionMode(m => m === 'view' ? 'select' : 'view')} 
                             className="p-2 rounded-full hover:bg-gray-700 transition-colors"
@@ -1079,11 +1138,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     </div>
                 </aside>
                 
-                <main className="w-5/6 p-4 flex flex-col bg-gray-900 relative">
-                    <div className="flex-grow overflow-auto flex items-center justify-center">
+                <main className="w-5/6 p-4 flex flex-col bg-gray-900 relative" onWheel={handleMainViewWheel}>
+                    <div className="flex-grow overflow-hidden flex items-center justify-center">
                         {viewedPage ? (
-                            <div className="relative" style={{ transform: `scale(${zoom})`, transition: 'transform 0.2s ease-in-out', transformOrigin: 'center center' }}>
-                               <img ref={imageRef} src={viewedPage.dataUrl} className="max-w-full max-h-full object-contain shadow-lg transition-transform duration-200" style={{transform: `rotate(${viewedPage.rotation}deg)`}}/>
+                            <div className="relative touch-none" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transition: 'transform 0.2s ease-in-out', transformOrigin: 'center center' }}>
+                               <img ref={imageRef} src={viewedPage.dataUrl} className="max-w-full max-h-full object-contain shadow-lg transition-transform duration-200 pointer-events-none" style={{transform: `rotate(${viewedPage.rotation}deg)`}}/>
                                <canvas
                                     ref={canvasRef}
                                     className={`absolute top-0 left-0 pointer-events-auto z-10`}
@@ -1092,6 +1151,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                     onMouseMove={handleCanvasMouseMove}
                                     onMouseUp={handleCanvasMouseUp}
                                     onMouseLeave={handleCanvasMouseUp}
+                                    onTouchStart={handleCanvasTouchStart}
+                                    onTouchMove={handleCanvasTouchMove}
+                                    onTouchEnd={handleCanvasTouchEnd}
                                />
                                {textInput.show && (
                                    <textarea
