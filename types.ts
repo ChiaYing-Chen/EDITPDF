@@ -5,14 +5,32 @@ export interface ProjectMetadata {
   pageCount: number;
 }
 
-export interface StoredProject {
+export type DrawingTool = 'line' | 'arrow' | 'rect' | 'circle' | 'text';
+
+export interface EditorObject {
   id: string;
-  name: string;
-  pages: {
+  type: DrawingTool;
+  sp: { x: number; y: number };
+  ep: { x: number; y: number };
+  text?: string;
+  color?: string;
+  backgroundColor?: string;
+  strokeWidth?: number;
+  fontFamily?: string;
+  fontSize?: number;
+}
+
+export interface PageData {
     id: string;
     dataUrl: string;
     rotation: 0 | 90 | 180 | 270;
-  }[];
+    objects: EditorObject[];
+}
+
+export interface StoredProject {
+  id: string;
+  name: string;
+  pages: PageData[];
 }
 
 export interface EditorPageProps {
@@ -24,11 +42,7 @@ export interface EditorPageProps {
 export interface EditorPageState {
   id: string;
   name: string;
-  pages: {
-    id: string;
-    dataUrl: string;
-    rotation: 0 | 90 | 180 | 270;
-  }[];
+  pages: PageData[];
 }
 
 export enum CompressionQuality {

@@ -1,8 +1,7 @@
-// Fix: Correctly import React hooks using curly braces.
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
-import { ProjectMetadata, StoredProject, EditorPageProps, EditorPageState, CompressionQuality } from './types';
+import { ProjectMetadata, StoredProject, EditorPageProps, EditorPageState, CompressionQuality, EditorObject, DrawingTool } from './types';
 
 // Configure the PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
@@ -56,10 +55,11 @@ const EyeIcon: React.FC<{ className?: string }> = ({ className }) => (
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
     </svg>
 );
-const HandUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 11.5V17.5C7 18.3284 7.67157 19 8.5 19H15.5C16.3284 19 17 18.3284 17 17.5V13.4375M7 11.5L9.92561 4.64878C10.2433 3.69333 11.414 3.32177 12.2428 3.88251L17 7.5M7 11.5H5.5C4.67157 11.5 4 12.1716 4 13V15C4 15.8284 4.67157 16.5 5.5 16.5H7"/>
-    </svg>
+const CheckSquareIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 11l3 3L22 4" />
+    <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+  </svg>
 );
 // Toolbar Icons
 const UndoIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -79,18 +79,46 @@ const FileIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 const RotateIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h5M20 20v-5h-5M4 4l16 16" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 4h5v5M9 20H4v-5" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.5 12a7.5 7.5 0 11-7.5-7.5M19.5 4.5v3h-3" />
     </svg>
 );
 const SplitIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879-2.879a5 5 0 00-7.07 0L2 12l2.879 2.879a5 5 0 007.07 0L19 5" />
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="6" cy="6" r="3" />
+        <circle cx="6" cy="18" r="3" />
+        <line x1="20" y1="4" x2="8.12" y2="15.88" />
+        <line x1="14.47" y1="14.48" x2="20" y2="20" />
+        <line x1="8.12" y1="8.12" x2="12" y2="12" />
     </svg>
 );
-const DrawIcon: React.FC<{ className?: string }> = ({ className }) => (
+const PointerIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2 L12 22 M2 12 L22 12 M9 5 L12 2 L15 5 M9 19 L12 22 L15 19 M5 9 L2 12 L5 15 M19 9 L22 12 L19 15" />
+    </svg>
+);
+const LineIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12h18" transform="rotate(45 12 12)" />
+    </svg>
+);
+const ArrowIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+    </svg>
+);
+const RectIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v16H4z" />
+    </svg>
+);
+const CircleIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <circle cx="12" cy="12" r="9" strokeWidth="2" />
+    </svg>
+);
+const TextIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="currentColor">
+        <text x="12" y="17" fontSize="18" textAnchor="middle" fontFamily="Arial, sans-serif" >文</text>
     </svg>
 );
 const ResetZoomIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -163,13 +191,19 @@ const useDropdown = () => {
 
 
 // --- Editor Page Component ---
-type DrawingTool = 'line' | 'arrow' | 'rect' | 'circle' | 'text' | null;
+type EditorTool = DrawingTool | 'move' | null;
 type Point = { x: number; y: number };
 type SelectionMode = 'view' | 'select';
+type ActionState = {
+    type: 'idle' | 'drawing' | 'moving' | 'resizing';
+    startPoint?: Point;
+    initialObject?: EditorObject;
+    handle?: string;
+};
 
 const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => {
     // History state for undo/redo
-    const [history, setHistory] = useState<EditorPageState[]>([{ ...project, pages: project.pages.map(p => ({ ...p, rotation: p.rotation ?? 0 })) }]);
+    const [history, setHistory] = useState<EditorPageState[]>([{ ...project, pages: project.pages.map(p => ({ ...p, rotation: p.rotation ?? 0, objects: p.objects || [] })) }]);
     const [historyIndex, setHistoryIndex] = useState(0);
     const state = history[historyIndex]; // Derived state
 
@@ -184,22 +218,35 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [zoom, setZoom] = useState(1);
 
     // Drawing state
-    const [drawingTool, setDrawingTool] = useState<DrawingTool>(null);
-    const [isDrawing, setIsDrawing] = useState(false);
-    const [startPoint, setStartPoint] = useState<Point | null>(null);
-    const [endPoint, setEndPoint] = useState<Point | null>(null);
+    const [activeTool, setActiveTool] = useState<EditorTool>('move');
+    const [actionState, setActionState] = useState<ActionState>({ type: 'idle' });
+    const [previewObject, setPreviewObject] = useState<EditorObject | null>(null);
+    const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
     const [textInput, setTextInput] = useState({ show: false, x: 0, y: 0, value: '' });
+
+    // Drawing Style State
+    const [drawingColor, setDrawingColor] = useState('#FF0000');
+    const [textBackgroundColor, setTextBackgroundColor] = useState('transparent');
+    const [strokeWidth, setStrokeWidth] = useState(2);
+    const [fontSize, setFontSize] = useState(16);
+    const [fontFamily, setFontFamily] = useState('sans-serif');
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const imageRef = useRef<HTMLImageElement>(null);
     const textInputRef = useRef<HTMLTextAreaElement>(null);
-    
+    const sidebarRef = useRef<HTMLElement>(null);
+    const thumbnailRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
     const fileMenu = useDropdown();
     const rotateMenu = useDropdown();
     const splitMenu = useDropdown();
-    const drawMenu = useDropdown();
+    
+    const viewedPage = state.pages.find(p => p.id === viewedPageId) || state.pages[0];
+    const selectedObject = viewedPage?.objects.find(o => o.id === selectedObjectId) || null;
+    const isDrawingToolActive = activeTool && activeTool !== 'move';
 
-    const updateState = (newState: EditorPageState) => {
+
+    const updateState = (newState: EditorPageState, options: { keepSelection?: boolean } = {}) => {
         const newHistory = history.slice(0, historyIndex + 1);
         newHistory.push(newState);
 
@@ -211,17 +258,22 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         setHistory(newHistory);
         setHistoryIndex(newHistory.length - 1);
         setIsDirty(true);
+        if (!options.keepSelection) {
+            setSelectedObjectId(null);
+        }
     };
 
     const handleUndo = () => {
         if (historyIndex > 0) {
             setHistoryIndex(prevIndex => prevIndex - 1);
+            setSelectedObjectId(null);
         }
     };
 
     const handleRedo = () => {
         if (historyIndex < history.length - 1) {
             setHistoryIndex(prevIndex => prevIndex + 1);
+            setSelectedObjectId(null);
         }
     };
 
@@ -233,8 +285,31 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         try {
             const pdfDoc = await PDFDocument.create();
             for (const page of pagesToExport) {
-                const isPng = page.dataUrl.startsWith('data:image/png');
-                const imageBytes = await fetch(page.dataUrl).then(res => res.arrayBuffer());
+                // Flatten drawings for export
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                const img = new Image();
+                
+                const flattenedDataUrl = await new Promise<string>((resolve) => {
+                    img.onload = () => {
+                        tempCanvas.width = img.naturalWidth;
+                        tempCanvas.height = img.naturalHeight;
+                        tempCtx!.drawImage(img, 0, 0);
+
+                        const scaleX = img.naturalWidth / imageRef.current!.clientWidth;
+                        const scaleY = img.naturalHeight / imageRef.current!.clientHeight;
+
+                        (page.objects || []).forEach(obj => {
+                            drawObject(tempCtx!, obj, { scaleX, scaleY });
+                        });
+                        resolve(tempCanvas.toDataURL('image/jpeg'));
+                    };
+                    img.src = page.dataUrl;
+                });
+
+
+                const isPng = flattenedDataUrl.startsWith('data:image/png');
+                const imageBytes = await fetch(flattenedDataUrl).then(res => res.arrayBuffer());
                 const image = await (isPng ? pdfDoc.embedPng(imageBytes) : pdfDoc.embedJpg(imageBytes));
 
                 const { width, height } = image;
@@ -288,7 +363,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const projectToSave: StoredProject = {
             id: state.id,
             name: projectName,
-            pages: state.pages.map(({ id, dataUrl, rotation }) => ({ id, dataUrl, rotation })),
+            pages: state.pages.map(({ id, dataUrl, rotation, objects }) => ({ id, dataUrl, rotation, objects })),
         };
         onSave(projectToSave, projectName);
         setIsDirty(false);
@@ -396,176 +471,438 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const handleZoomOut = () => setZoom(z => Math.max(z - 0.1, 0.2));
     const handleResetZoom = () => setZoom(1);
 
+    const throttle = (func: (...args: any[]) => void, limit: number) => {
+        let inThrottle: boolean;
+        return function(this: any, ...args: any[]) {
+            const context = this;
+            if (!inThrottle) {
+                func.apply(context, args);
+                inThrottle = true;
+                setTimeout(() => inThrottle = false, limit);
+            }
+        }
+    };
+
+    const handleSidebarScroll = useCallback(() => {
+        if (selectionMode !== 'view' || !sidebarRef.current) return;
+
+        const sidebar = sidebarRef.current;
+        const viewportCenter = sidebar.scrollTop + sidebar.clientHeight / 2;
+        const sidebarScrollTop = sidebar.scrollTop;
+        const sidebarScrollBottom = sidebarScrollTop + sidebar.clientHeight;
+
+        let closestPageId: string | null = null;
+        let minDistance = Infinity;
+
+        // Iterate over fully visible thumbnails and find the one closest to the center
+        state.pages.forEach(page => {
+            const thumbnailEl = thumbnailRefs.current.get(page.id);
+            if (thumbnailEl) {
+                const thumbTop = thumbnailEl.offsetTop;
+                const thumbBottom = thumbTop + thumbnailEl.offsetHeight;
+
+                // Check if the thumbnail is fully visible (with 1px tolerance)
+                if (thumbTop >= sidebarScrollTop - 1 && thumbBottom <= sidebarScrollBottom + 1) {
+                    const thumbnailCenter = thumbTop + thumbnailEl.offsetHeight / 2;
+                    const distance = Math.abs(viewportCenter - thumbnailCenter);
+
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        closestPageId = page.id;
+                    }
+                }
+            }
+        });
+
+        if (closestPageId && closestPageId !== viewedPageId) {
+            setViewedPageId(closestPageId);
+            setSelectedPages(new Set([closestPageId]));
+        }
+    }, [selectionMode, state.pages, viewedPageId]);
+
+    const throttledScrollHandler = useCallback(throttle(handleSidebarScroll, 100), [handleSidebarScroll]);
+
 
     // --- Drawing Logic ---
-    const applyDrawing = (pageId: string, sp: Point, ep: Point, tool: DrawingTool, text?: string) => {
-        const page = state.pages.find(p => p.id === pageId);
-        if (!page || !imageRef.current) return;
+    const getObjectAtPoint = (point: Point, objects: EditorObject[]): EditorObject | null => {
+        // Iterate backwards to select top-most object
+        for (let i = objects.length - 1; i >= 0; i--) {
+            const obj = objects[i];
+            const { sp, ep } = obj;
+            const minX = Math.min(sp.x, ep.x);
+            const maxX = Math.max(sp.x, ep.x);
+            const minY = Math.min(sp.y, ep.y);
+            const maxY = Math.max(sp.y, ep.y);
 
-        const img = new Image();
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return;
-            
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
-            ctx.drawImage(img, 0, 0);
-
-            // Scale coordinates from display size to natural image size
-            const scaleX = img.naturalWidth / imageRef.current!.clientWidth;
-            const scaleY = img.naturalHeight / imageRef.current!.clientHeight;
-
-            const startX = sp.x * scaleX;
-            const startY = sp.y * scaleY;
-            const endX = ep.x * scaleX;
-            const endY = ep.y * scaleY;
-
-            ctx.strokeStyle = 'red';
-            ctx.fillStyle = 'red';
-            ctx.lineWidth = 2 * scaleX;
-
-            switch (tool) {
-                case 'line':
-                    ctx.beginPath();
-                    ctx.moveTo(startX, startY);
-                    ctx.lineTo(endX, endY);
-                    ctx.stroke();
-                    break;
-                case 'arrow':
-                    ctx.beginPath();
-                    ctx.moveTo(startX, startY);
-                    ctx.lineTo(endX, endY);
-                    const headlen = 15 * scaleX;
-                    const angle = Math.atan2(endY - startY, endX - startX);
-                    ctx.lineTo(endX - headlen * Math.cos(angle - Math.PI / 6), endY - headlen * Math.sin(angle - Math.PI / 6));
-                    ctx.moveTo(endX, endY);
-                    ctx.lineTo(endX - headlen * Math.cos(angle + Math.PI / 6), endY - headlen * Math.sin(angle + Math.PI / 6));
-                    ctx.stroke();
-                    break;
-                case 'rect':
-                    ctx.strokeRect(startX, startY, endX - startX, endY - startY);
-                    break;
-                case 'circle':
-                    ctx.beginPath();
-                    const radiusX = Math.abs(endX - startX) / 2;
-                    const radiusY = Math.abs(endY - startY) / 2;
-                    const centerX = Math.min(startX, endX) + radiusX;
-                    const centerY = Math.min(startY, endY) + radiusY;
-                    ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
-                    ctx.stroke();
-                    break;
-                 case 'text':
-                    if (text) {
-                        ctx.font = `${16 * scaleX}px sans-serif`;
-                        ctx.fillText(text, startX, startY);
-                    }
-                    break;
+            if (point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY) {
+                // coarse check, good enough for now
+                return obj;
             }
-
-            const newDataUrl = canvas.toDataURL('image/jpeg');
-            const newState = {
-                ...state,
-                pages: state.pages.map(p => p.id === pageId ? { ...p, dataUrl: newDataUrl } : p)
-            };
-            updateState(newState);
+        }
+        return null;
+    };
+    
+    const getHandlesForObject = (object: EditorObject) => {
+        const { sp, ep } = object;
+        const minX = Math.min(sp.x, ep.x);
+        const maxX = Math.max(sp.x, ep.x);
+        const minY = Math.min(sp.y, ep.y);
+        const maxY = Math.max(sp.y, ep.y);
+        return {
+            'top-left': { x: minX, y: minY },
+            'top-right': { x: maxX, y: minY },
+            'bottom-left': { x: minX, y: maxY },
+            'bottom-right': { x: maxX, y: maxY },
         };
-        img.src = page.dataUrl;
+    };
+
+    const getHandleAtPoint = (point: Point, object: EditorObject | null): string | null => {
+        if (!object) return null;
+        const handles = getHandlesForObject(object);
+        const handleSize = 8; // in pixels
+        for (const [name, pos] of Object.entries(handles)) {
+            if (
+                point.x >= pos.x - handleSize / 2 &&
+                point.x <= pos.x + handleSize / 2 &&
+                point.y >= pos.y - handleSize / 2 &&
+                point.y <= pos.y + handleSize / 2
+            ) {
+                return name;
+            }
+        }
+        return null;
+    };
+
+    const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>): Point => {
+        const canvas = canvasRef.current;
+        const image = imageRef.current;
+        if (!canvas || !image) return { x: 0, y: 0 };
+    
+        const rect = image.getBoundingClientRect();
+        const imageCenterX = rect.left + rect.width / 2;
+        const imageCenterY = rect.top + rect.height / 2;
+    
+        const mouseX = e.clientX;
+        const mouseY = e.clientY;
+    
+        // Vector from image center to mouse
+        let vecX = mouseX - imageCenterX;
+        let vecY = mouseY - imageCenterY;
+    
+        // Inverse rotation
+        const rotation = viewedPage.rotation;
+        const angleRad = -rotation * (Math.PI / 180);
+        const rotatedX = vecX * Math.cos(angleRad) - vecY * Math.sin(angleRad);
+        const rotatedY = vecX * Math.sin(angleRad) + vecY * Math.cos(angleRad);
+    
+        // Inverse scaling to get back to 1:1 image coordinates
+        const unscaledX = rotatedX / zoom;
+        const unscaledY = rotatedY / zoom;
+    
+        // Add back to the original image's unscaled center
+        const finalX = (image.clientWidth / 2) + unscaledX;
+        const finalY = (image.clientHeight / 2) + unscaledY;
+    
+        return { x: finalX, y: finalY };
     };
 
     const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-        if (!drawingTool || !viewedPageId) return;
-        const rect = e.currentTarget.getBoundingClientRect();
-        const point = { x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom };
-
-        if (drawingTool === 'text') {
-            setTextInput({ show: true, x: point.x, y: point.y, value: '' });
-            setTimeout(() => textInputRef.current?.focus(), 0);
+        if (textInput.show) {
+            textInputRef.current?.blur();
             return;
         }
+        
+        const startPoint = getCanvasCoordinates(e);
 
-        setIsDrawing(true);
-        setStartPoint(point);
-        setEndPoint(point);
+        if (activeTool && activeTool !== 'move') {
+            if (activeTool === 'text') {
+                setSelectedObjectId(null);
+                setTextInput({ show: true, x: startPoint.x, y: startPoint.y, value: '' });
+                setTimeout(() => textInputRef.current?.focus(), 0);
+            } else {
+                setActionState({ type: 'drawing', startPoint });
+                setSelectedObjectId(null);
+            }
+        } else { // Move/Select tool
+            const handle = getHandleAtPoint(startPoint, selectedObject);
+            if (handle) {
+                setActionState({ type: 'resizing', startPoint, handle, initialObject: selectedObject! });
+            } else {
+                const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
+                if (objectToSelect) {
+                    setSelectedObjectId(objectToSelect.id);
+                    setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
+                } else {
+                    setSelectedObjectId(null);
+                    setActionState({ type: 'idle' });
+                }
+            }
+        }
     };
 
     const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-        if (!isDrawing || !drawingTool || !startPoint) return;
-        const rect = e.currentTarget.getBoundingClientRect();
-        const point = { x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom };
-        setEndPoint(point);
+        if (actionState.type === 'idle') return;
+        
+        const currentPoint = getCanvasCoordinates(e);
+        
+        const { type, startPoint } = actionState;
+
+        if (type === 'drawing' && startPoint) {
+            setPreviewObject({
+                id: 'preview',
+                type: activeTool as DrawingTool,
+                sp: startPoint,
+                ep: currentPoint,
+                color: drawingColor,
+                strokeWidth: strokeWidth,
+            });
+        } else if (type === 'moving' && actionState.initialObject) {
+            const dx = currentPoint.x - startPoint!.x;
+            const dy = currentPoint.y - startPoint!.y;
+            const { sp, ep } = actionState.initialObject;
+            const updatedObject = {
+                ...actionState.initialObject,
+                sp: { x: sp.x + dx, y: sp.y + dy },
+                ep: { x: ep.x + dx, y: ep.y + dy },
+            };
+            setPreviewObject(updatedObject);
+        } else if (type === 'resizing' && actionState.initialObject && actionState.handle) {
+             const { sp, ep } = actionState.initialObject;
+             let newSp = { ...sp };
+             let newEp = { ...ep };
+             if (actionState.handle.includes('left')) {
+                 newSp.x = currentPoint.x;
+             }
+             if (actionState.handle.includes('right')) {
+                 newEp.x = currentPoint.x;
+             }
+             if (actionState.handle.includes('top')) {
+                 newSp.y = currentPoint.y;
+             }
+             if (actionState.handle.includes('bottom')) {
+                 newEp.y = currentPoint.y;
+             }
+             const updatedObject = { ...actionState.initialObject, sp: newSp, ep: newEp };
+             setPreviewObject(updatedObject);
+        }
     };
 
-    const handleCanvasMouseUp = () => {
-        if (!isDrawing || !drawingTool || !startPoint || !endPoint || !viewedPageId) return;
-        applyDrawing(viewedPageId, startPoint, endPoint, drawingTool);
-        setIsDrawing(false);
-        setStartPoint(null);
-        setEndPoint(null);
-    };
+    const handleCanvasMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (actionState.type === 'idle') return;
 
+        const endPoint = getCanvasCoordinates(e);
+
+        const { type, startPoint } = actionState;
+        
+        let newObjects = [...(viewedPage?.objects || [])];
+
+        if (type === 'drawing' && startPoint && (startPoint.x !== endPoint.x || startPoint.y !== endPoint.y)) {
+            const newObject: EditorObject = {
+                id: `obj_${Date.now()}`,
+                type: activeTool as DrawingTool,
+                sp: startPoint,
+                ep: endPoint,
+                color: drawingColor,
+                strokeWidth: strokeWidth,
+            };
+            newObjects.push(newObject);
+        } else if ((type === 'moving' || type === 'resizing') && previewObject) {
+            newObjects = newObjects.map(obj => obj.id === previewObject.id ? previewObject : obj);
+        }
+
+        if (type !== 'idle') {
+            const newState = {
+                ...state,
+                pages: state.pages.map(p => p.id === viewedPageId ? { ...p, objects: newObjects } : p)
+            };
+            updateState(newState, { keepSelection: true });
+        }
+        
+        setActionState({ type: 'idle' });
+        setPreviewObject(null);
+    };
+    
     const handleTextBlur = () => {
-        if (textInput.value && viewedPageId) {
-            applyDrawing(viewedPageId, {x: textInput.x, y: textInput.y + 16}, {x:0, y:0}, 'text', textInput.value);
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (textInput.value && viewedPageId && ctx) {
+            const text = textInput.value;
+            const lines = text.split('\n');
+            const size = fontSize;
+            const family = fontFamily;
+            ctx.font = `${size}px ${family}`;
+    
+            let maxWidth = 0;
+            lines.forEach(line => {
+                const metrics = ctx.measureText(line);
+                if (metrics.width > maxWidth) {
+                    maxWidth = metrics.width;
+                }
+            });
+    
+            // Use a standard line height multiplier for robust height calculation
+            const lineHeight = size * 1.2;
+            const totalHeight = lines.length * lineHeight;
+    
+            const newObject: EditorObject = {
+                id: `obj_${Date.now()}`,
+                type: 'text',
+                sp: { x: textInput.x, y: textInput.y },
+                ep: { x: textInput.x + maxWidth, y: textInput.y + totalHeight },
+                text: text,
+                color: drawingColor,
+                backgroundColor: textBackgroundColor,
+                fontFamily: family,
+                fontSize: size,
+            };
+            const newState = {
+                ...state,
+                pages: state.pages.map(p => p.id === viewedPageId ? { ...p, objects: [...(p.objects || []), newObject] } : p)
+            };
+            updateState(newState);
         }
         setTextInput({ show: false, x: 0, y: 0, value: '' });
-        setDrawingTool(null);
+        setActiveTool('move');
     };
     
-    useEffect(() => {
-        if (isDrawing && canvasRef.current && startPoint && endPoint) {
-            const ctx = canvasRef.current.getContext('2d');
-            if (!ctx) return;
-            ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-            ctx.strokeStyle = 'red';
-            ctx.lineWidth = 2;
-            
-            switch (drawingTool) {
-                 case 'line':
-                    ctx.beginPath();
-                    ctx.moveTo(startPoint.x, startPoint.y);
-                    ctx.lineTo(endPoint.x, endPoint.y);
-                    ctx.stroke();
-                    break;
-                 case 'arrow':
-                    ctx.beginPath();
-                    ctx.moveTo(startPoint.x, startPoint.y);
-                    ctx.lineTo(endPoint.x, endPoint.y);
-                    const headlen = 15;
-                    const angle = Math.atan2(endPoint.y - startPoint.y, endPoint.x - startPoint.x);
-                    ctx.lineTo(endPoint.x - headlen * Math.cos(angle - Math.PI / 6), endPoint.y - headlen * Math.sin(angle - Math.PI / 6));
-                    ctx.moveTo(endPoint.x, endPoint.y);
-                    ctx.lineTo(endPoint.x - headlen * Math.cos(angle + Math.PI / 6), endPoint.y - headlen * Math.sin(angle + Math.PI / 6));
-                    ctx.stroke();
-                    break;
-                case 'rect':
-                    ctx.strokeRect(startPoint.x, startPoint.y, endPoint.x - startPoint.x, endPoint.y - startPoint.y);
-                    break;
-                 case 'circle':
-                    ctx.beginPath();
-                    const radiusX = Math.abs(endPoint.x - startPoint.x) / 2;
-                    const radiusY = Math.abs(endPoint.y - startPoint.y) / 2;
-                    const centerX = Math.min(startPoint.x, endPoint.x) + radiusX;
-                    const centerY = Math.min(startPoint.y, endPoint.y) + radiusY;
-                    ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
-                    ctx.stroke();
-                    break;
-            }
-        } else if (!isDrawing && canvasRef.current) {
-            const ctx = canvasRef.current.getContext('2d');
-            ctx?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-        }
-    }, [isDrawing, startPoint, endPoint, drawingTool]);
-    
-    const viewedPage = state.pages.find(p => p.id === viewedPageId) || state.pages[0];
+    const drawObject = (ctx: CanvasRenderingContext2D, obj: EditorObject, options: { scaleX?: number, scaleY?: number } = {}) => {
+        const { scaleX = 1, scaleY = 1 } = options;
+        const sp = { x: obj.sp.x * scaleX, y: obj.sp.y * scaleY };
+        const ep = { x: obj.ep.x * scaleX, y: obj.ep.y * scaleY };
+        
+        ctx.strokeStyle = obj.color || 'red';
+        ctx.fillStyle = obj.color || 'red';
+        ctx.lineWidth = (obj.strokeWidth || 2) * scaleX;
 
-    useEffect(() => {
-        if (imageRef.current && canvasRef.current) {
-            const { clientWidth, clientHeight } = imageRef.current;
-            canvasRef.current.width = clientWidth;
-            canvasRef.current.height = clientHeight;
+        switch (obj.type) {
+            case 'line':
+                ctx.beginPath();
+                ctx.moveTo(sp.x, sp.y);
+                ctx.lineTo(ep.x, ep.y);
+                ctx.stroke();
+                break;
+            case 'arrow':
+                const headlen = 15 * scaleX;
+                const angle = Math.atan2(ep.y - sp.y, ep.x - sp.x);
+                
+                // Main line
+                ctx.beginPath();
+                ctx.moveTo(sp.x, sp.y);
+                ctx.lineTo(ep.x, ep.y);
+                ctx.stroke();
+
+                // Arrowhead (filled triangle)
+                ctx.beginPath();
+                ctx.moveTo(ep.x, ep.y);
+                ctx.lineTo(ep.x - headlen * Math.cos(angle - Math.PI / 6), ep.y - headlen * Math.sin(angle - Math.PI / 6));
+                ctx.lineTo(ep.x - headlen * Math.cos(angle + Math.PI / 6), ep.y - headlen * Math.sin(angle + Math.PI / 6));
+                ctx.closePath();
+                ctx.fill();
+                break;
+            case 'rect':
+                ctx.strokeRect(Math.min(sp.x, ep.x), Math.min(sp.y, ep.y), Math.abs(ep.x - sp.x), Math.abs(ep.y - sp.y));
+                break;
+            case 'circle':
+                ctx.beginPath();
+                const radiusX = Math.abs(ep.x - sp.x) / 2;
+                const radiusY = Math.abs(ep.y - sp.y) / 2;
+                const centerX = Math.min(sp.x, ep.x) + radiusX;
+                const centerY = Math.min(sp.y, ep.y) + radiusY;
+                ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
+                ctx.stroke();
+                break;
+            case 'text':
+                if (obj.text) {
+                    const size = (obj.fontSize || 16) * scaleY;
+                    const family = obj.fontFamily || 'sans-serif';
+                    ctx.font = `${size}px ${family}`;
+                    ctx.textBaseline = 'top';
+            
+                    const lines = obj.text.split('\n');
+                    const lineHeight = (obj.fontSize || 16) * 1.2 * scaleY;
+
+                    if (obj.backgroundColor && obj.backgroundColor !== 'transparent') {
+                        ctx.fillStyle = obj.backgroundColor;
+                        lines.forEach((line, index) => {
+                            const metrics = ctx.measureText(line);
+                            const textWidth = metrics.width;
+                            ctx.fillRect(sp.x, sp.y + (index * lineHeight), textWidth, lineHeight);
+                        });
+                    }
+            
+                    ctx.fillStyle = obj.color || 'red';
+                    lines.forEach((line, index) => {
+                        ctx.fillText(line, sp.x, sp.y + (index * lineHeight));
+                    });
+                }
+                break;
         }
-    }, [viewedPage?.dataUrl, state.pages]);
+    };
+    
+    // Combined effect for resizing canvas and drawing objects to prevent flicker.
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        const image = imageRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (!ctx || !canvas || !image || !viewedPage) return;
+
+        // 1. Resize canvas to match image's rendered size
+        const { clientWidth, clientHeight } = image;
+        if (canvas.width !== clientWidth || canvas.height !== clientHeight) {
+            canvas.width = clientWidth;
+            canvas.height = clientHeight;
+        } else {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+        
+        // 2. Redraw all objects
+        const objectsToDraw = previewObject ? viewedPage.objects.filter(o => o.id !== previewObject.id) : viewedPage.objects;
+        
+        objectsToDraw.forEach(obj => drawObject(ctx, obj));
+
+        if (previewObject) {
+            drawObject(ctx, previewObject);
+        }
+        
+        const currentSelectedObject = previewObject && previewObject.id === selectedObjectId ? previewObject : selectedObject;
+        if (currentSelectedObject) {
+            const { sp, ep } = currentSelectedObject;
+            const x = Math.min(sp.x, ep.x);
+            const y = Math.min(sp.y, ep.y);
+            const w = Math.abs(sp.x - ep.x);
+            const h = Math.abs(sp.y - ep.y);
+
+            ctx.strokeStyle = 'rgba(0, 123, 255, 0.7)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.strokeRect(x, y, w, h);
+            ctx.setLineDash([]);
+            
+            const handles = getHandlesForObject(currentSelectedObject);
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 1;
+            Object.values(handles).forEach(pos => {
+                ctx.fillRect(pos.x - 4, pos.y - 4, 8, 8);
+                ctx.strokeRect(pos.x - 4, pos.y - 4, 8, 8);
+            });
+        }
+    }, [viewedPage, selectedObjectId, selectedObject, previewObject, zoom]);
+
+    // Update cursor based on action
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        if (activeTool && activeTool !== 'move') {
+            canvas.style.cursor = 'crosshair';
+        } else if (actionState.type === 'moving') {
+            canvas.style.cursor = 'grabbing';
+        } else if (actionState.type === 'resizing') {
+            canvas.style.cursor = 'nwse-resize'; // Simplified for now
+        } else {
+            canvas.style.cursor = 'default';
+        }
+    }, [activeTool, actionState.type]);
     
     return (
         <div className="flex flex-col h-screen">
@@ -575,11 +912,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     <p className="text-white mt-4">處理中，請稍候...</p>
                 </div>
             )}
-            <header className="bg-gray-800 p-3 shadow-md flex justify-between items-center sticky top-0 z-20">
-                <span className="text-white text-xl font-bold px-2 py-1">{projectName}</span>
-                 <div className="flex-grow flex justify-center">
+            <header className="bg-gray-800 shadow-md flex items-center sticky top-0 z-20 h-20 px-3">
+                <div className="w-1/6 flex-shrink-0">
+                    <span className="text-white text-xl font-bold px-2 py-1 truncate">{projectName}</span>
+                </div>
+
+                <div className="flex-grow flex items-center">
                     {/* Toolbar */}
-                    <div className="flex items-center gap-2 text-sm bg-gray-900 px-3 py-1 rounded-full">
+                    <div className="flex items-center gap-2 text-sm bg-gray-900 px-3 h-12 rounded-full">
                          {/* Undo/Redo */}
                         <button onClick={handleUndo} disabled={!canUndo} className="p-1.5 hover:bg-gray-700 rounded-full disabled:opacity-50 disabled:cursor-not-allowed" title="上一步">
                             <UndoIcon className="w-4 h-4" />
@@ -642,31 +982,72 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 </div>
                             )}
                         </div>
-                        {/* Draw Menu */}
-                        <div className="relative" ref={drawMenu.ref}>
-                            <button onClick={drawMenu.toggle} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-700 rounded-full" aria-haspopup="true" aria-expanded={drawMenu.isOpen}>
-                                <DrawIcon className="w-4 h-4" /> 繪圖
-                            </button>
-                            {drawMenu.isOpen && (
-                                <div className="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-1 z-30">
-                                   <button onClick={() => { setDrawingTool('line'); drawMenu.close(); }} className="w-full text-left block px-4 py-2 text-sm text-white hover:bg-gray-600">直線</button>
-                                   <button onClick={() => { setDrawingTool('arrow'); drawMenu.close(); }} className="w-full text-left block px-4 py-2 text-sm text-white hover:bg-gray-600">箭頭</button>
-                                   <button onClick={() => { setDrawingTool('rect'); drawMenu.close(); }} className="w-full text-left block px-4 py-2 text-sm text-white hover:bg-gray-600">方形</button>
-                                   <button onClick={() => { setDrawingTool('circle'); drawMenu.close(); }} className="w-full text-left block px-4 py-2 text-sm text-white hover:bg-gray-600">圓形</button>
-                                   <button onClick={() => { setDrawingTool('text'); drawMenu.close(); }} className="w-full text-left block px-4 py-2 text-sm text-white hover:bg-gray-600">打字</button>
-                                </div>
-                            )}
+                         <div className="h-4 border-l border-gray-600 mx-1"></div>
+                        {/* Draw Tools */}
+                         <div className="flex items-center gap-1">
+                            <button onClick={() => setActiveTool('move')} title="選取/移動" className={`p-1.5 rounded-full ${activeTool === 'move' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}> <PointerIcon className="w-4 h-4" /> </button>
+                            <button onClick={() => setActiveTool('line')} title="直線" className={`p-1.5 rounded-full ${activeTool === 'line' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}> <LineIcon className="w-4 h-4" /> </button>
+                            <button onClick={() => setActiveTool('arrow')} title="箭頭" className={`p-1.5 rounded-full ${activeTool === 'arrow' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}> <ArrowIcon className="w-4 h-4" /> </button>
+                            <button onClick={() => setActiveTool('rect')} title="方形" className={`p-1.5 rounded-full ${activeTool === 'rect' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}> <RectIcon className="w-4 h-4" /> </button>
+                            <button onClick={() => setActiveTool('circle')} title="圓形" className={`p-1.5 rounded-full ${activeTool === 'circle' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}> <CircleIcon className="w-4 h-4" /> </button>
+                            <button onClick={() => setActiveTool('text')} title="打字" className={`p-1.5 rounded-full ${activeTool === 'text' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}> <TextIcon className="w-4 h-4" /> </button>
                         </div>
+                        {isDrawingToolActive && (
+                            <>
+                                <div className="h-4 border-l border-gray-600 mx-1"></div>
+                                <div className="flex items-center gap-3 text-white">
+                                    <div title="顏色">
+                                        <input type="color" value={drawingColor} onChange={(e) => setDrawingColor(e.target.value)} className="w-6 h-6 p-0 border-none rounded bg-transparent cursor-pointer appearance-none" style={{'WebkitAppearance': 'none'}}/>
+                                    </div>
+                                    {activeTool !== 'text' && (
+                                        <div className="flex items-center gap-1" title="線條粗細">
+                                            {[2, 5, 10].map(width => (
+                                                <button key={width} onClick={() => setStrokeWidth(width)} className={`p-1 rounded-full ${strokeWidth === width ? 'bg-blue-600' : 'hover:bg-gray-700'}`}>
+                                                    <div className="bg-white rounded-full" style={{width: `${width+2}px`, height: `${width+2}px`}}></div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {activeTool === 'text' && (
+                                        <>
+                                            <div className="flex items-center gap-2" title="背景色">
+                                                <span className="text-xs">背景:</span>
+                                                <input type="color" value={textBackgroundColor === 'transparent' ? '#ffffff' : textBackgroundColor} onChange={(e) => setTextBackgroundColor(e.target.value)} className="w-6 h-6 p-0 border-none rounded bg-gray-700 cursor-pointer" />
+                                                <button onClick={() => setTextBackgroundColor('transparent')} className={`text-xs px-2 py-0.5 rounded ${textBackgroundColor === 'transparent' ? 'bg-blue-600 text-white' : 'bg-gray-600 hover:bg-gray-500'}`}>
+                                                    無
+                                                </button>
+                                            </div>
+                                            <div title="字體">
+                                                <select value={fontFamily} onChange={(e) => setFontFamily(e.target.value)} className="bg-gray-700 border border-gray-600 rounded px-2 py-0.5 text-xs">
+                                                    <option value="sans-serif">Sans-Serif</option>
+                                                    <option value="serif">Serif</option>
+                                                    <option value="monospace">Monospace</option>
+                                                    <option value="Arial">Arial</option>
+                                                    <option value="Times New Roman">Times New Roman</option>
+                                                </select>
+                                            </div>
+                                            <div title="字體大小">
+                                                <input type="number" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value, 10))} className="bg-gray-700 border border-gray-600 rounded w-16 px-2 py-0.5 text-xs" />
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 w-1/4 justify-end">
+                <div className="flex items-center gap-2 justify-end flex-shrink-0">
                     {showSaveSuccess && <span className="text-green-400 transition-opacity duration-300 text-sm">專案已儲存並開始下載！</span>}
                 </div>
             </header>
 
             <div className="flex-grow flex overflow-hidden">
-                <aside className="w-1/6 bg-gray-800 p-2 overflow-y-auto">
+                <aside 
+                    ref={sidebarRef}
+                    onScroll={throttledScrollHandler}
+                    className="w-1/6 bg-gray-800 p-2 overflow-y-auto"
+                >
                     <div className="flex justify-between items-center mb-2 p-2">
                         <h2 className="text-lg font-semibold">頁面 ({state.pages.length})</h2>
                         <button 
@@ -674,12 +1055,16 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                             className="p-2 rounded-full hover:bg-gray-700 transition-colors"
                             title={selectionMode === 'view' ? '切換至選取模式' : '切換至檢視模式'}
                         >
-                            {selectionMode === 'view' ? <EyeIcon className="w-5 h-5" /> : <HandUpIcon className="w-5 h-5" />}
+                            {selectionMode === 'view' ? <EyeIcon className="w-5 h-5" /> : <CheckSquareIcon className="w-5 h-5" />}
                         </button>
                     </div>
                      <div className="grid grid-cols-1 gap-2">
                         {state.pages.map(page => (
                             <div key={page.id} 
+                                ref={el => {
+                                    if (el) thumbnailRefs.current.set(page.id, el);
+                                    else thumbnailRefs.current.delete(page.id);
+                                }}
                                 draggable
                                 onDragStart={() => setDraggedId(page.id)}
                                 onDragOver={(e) => e.preventDefault()}
@@ -694,39 +1079,44 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     </div>
                 </aside>
                 
-                <main className="w-5/6 p-4 overflow-auto flex items-center justify-center bg-gray-900 relative">
-                    {viewedPage ? (
-                        <div className="relative" style={{ transform: `scale(${zoom})`, transition: 'transform 0.2s ease-in-out', transformOrigin: 'center center' }}>
-                           <img ref={imageRef} src={viewedPage.dataUrl} className="max-w-full max-h-full object-contain shadow-lg transition-transform duration-200" style={{transform: `rotate(${viewedPage.rotation}deg)`}} onLoad={() => {
-                               if (imageRef.current && canvasRef.current) {
-                                   const { clientWidth, clientHeight } = imageRef.current;
-                                   canvasRef.current.width = clientWidth;
-                                   canvasRef.current.height = clientHeight;
-                               }
-                           }}/>
-                           <canvas
-                                ref={canvasRef}
-                                className={`absolute top-0 left-0 ${drawingTool ? 'cursor-crosshair' : 'cursor-default'} pointer-events-auto`}
-                                style={{ transform: `rotate(${viewedPage.rotation}deg)` }}
-                                onMouseDown={handleCanvasMouseDown}
-                                onMouseMove={handleCanvasMouseMove}
-                                onMouseUp={handleCanvasMouseUp}
-                                onMouseLeave={handleCanvasMouseUp}
-                           />
-                           {textInput.show && (
-                               <textarea
-                                   ref={textInputRef}
-                                   value={textInput.value}
-                                   onChange={(e) => setTextInput(t => ({...t, value: e.target.value}))}
-                                   onBlur={handleTextBlur}
-                                   className="absolute bg-transparent text-red-500 border border-red-500 p-1"
-                                   style={{ left: textInput.x, top: textInput.y, fontSize: 16 }}
+                <main className="w-5/6 p-4 flex flex-col bg-gray-900 relative">
+                    <div className="flex-grow overflow-auto flex items-center justify-center">
+                        {viewedPage ? (
+                            <div className="relative" style={{ transform: `scale(${zoom})`, transition: 'transform 0.2s ease-in-out', transformOrigin: 'center center' }}>
+                               <img ref={imageRef} src={viewedPage.dataUrl} className="max-w-full max-h-full object-contain shadow-lg transition-transform duration-200" style={{transform: `rotate(${viewedPage.rotation}deg)`}}/>
+                               <canvas
+                                    ref={canvasRef}
+                                    className={`absolute top-0 left-0 pointer-events-auto z-10`}
+                                    style={{ transform: `rotate(${viewedPage.rotation}deg)` }}
+                                    onMouseDown={handleCanvasMouseDown}
+                                    onMouseMove={handleCanvasMouseMove}
+                                    onMouseUp={handleCanvasMouseUp}
+                                    onMouseLeave={handleCanvasMouseUp}
                                />
-                           )}
-                        </div>
-                        ) : <p className="text-gray-500">沒有頁面可顯示</p>
-                    }
-                     {viewedPage && (
+                               {textInput.show && (
+                                   <textarea
+                                       ref={textInputRef}
+                                       value={textInput.value}
+                                       onChange={(e) => setTextInput(t => ({...t, value: e.target.value}))}
+                                       onBlur={handleTextBlur}
+                                       className="absolute bg-transparent border p-1 z-20"
+                                       style={{ 
+                                           left: textInput.x * zoom, 
+                                           top: textInput.y * zoom, 
+                                           fontSize: fontSize * zoom,
+                                           fontFamily: fontFamily,
+                                           color: drawingColor,
+                                           borderColor: drawingColor,
+                                           transform: `rotate(${viewedPage.rotation}deg)`,
+                                           transformOrigin: 'top left'
+                                        }}
+                                   />
+                               )}
+                            </div>
+                            ) : <p className="text-gray-500">沒有頁面可顯示</p>
+                        }
+                    </div>
+                    {viewedPage && (
                         <div className="absolute bottom-5 right-5 z-30 bg-gray-800 bg-opacity-75 rounded-full flex items-center text-white shadow-lg">
                             <button onClick={handleZoomOut} className="p-2 hover:bg-gray-700 rounded-full transition-colors" title="縮小">
                                 <MinusIcon className="w-6 h-6" />
@@ -761,7 +1151,7 @@ const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }>
         const newProject: StoredProject = {
             id: `proj_${Date.now()}`,
             name,
-            pages: pages.map(p => ({ ...p, rotation: 0 })),
+            pages: pages.map(p => ({ ...p, rotation: 0, objects: [] })),
         };
         onProjectSelect(newProject);
     };

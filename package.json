@@ -13,7 +13,8 @@
     "react-dom": "^19.2.0",
     "jspdf": "^2.5.1",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "4.4.168"
+    "pdfjs-dist": "4.4.168",
+    "pdf-dist": "^1.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
