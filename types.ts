@@ -1,3 +1,4 @@
+
 export interface ProjectMetadata {
   id: string;
   name: string;
@@ -30,6 +31,8 @@ export interface PageData {
 export interface StoredProject {
   id: string;
   name: string;
+  // FIX: Add timestamp to StoredProject to allow sorting and align with DB schema.
+  timestamp: number;
   pages: PageData[];
 }
 
@@ -42,6 +45,8 @@ export interface EditorPageProps {
 export interface EditorPageState {
   id: string;
   name: string;
+  // FIX: Add timestamp to EditorPageState to maintain data consistency with StoredProject.
+  timestamp: number;
   pages: PageData[];
 }
 
