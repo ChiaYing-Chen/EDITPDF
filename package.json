@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:docs": "vite build && rm -rf docs && mkdir docs && cp -r dist/* docs/ && touch docs/.nojekyll",
     "preview": "vite preview"
   },
   "dependencies": {
