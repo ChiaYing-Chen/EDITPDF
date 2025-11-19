@@ -1,12 +1,11 @@
 
-const CACHE_NAME = 'pdf-editor-v1';
+const CACHE_NAME = 'pdf-editor-v2'; // Increment version to force update
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './index.tsx',
-  './App.tsx',
-  './types.ts',
-  'https://cdn.tailwindcss.com'
+  './manifest.json',
+  'https://cdn.tailwindcss.com',
+  'https://cdn-icons-png.flaticon.com/512/337/337946.png'
 ];
 
 // Install event: Cache core assets
@@ -35,34 +34,48 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch event: Network first, then cache (Stale-While-Revalidate logic for CDN assets)
+// Fetch event: Network first, then cache, with navigation fallback
 self.addEventListener('fetch', (event) => {
   // Skip non-http requests (e.g., chrome-extension://)
   if (!event.request.url.startsWith('http')) return;
 
   event.respondWith(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.match(event.request).then((response) => {
-        const fetchPromise = fetch(event.request)
-          .then((networkResponse) => {
-            // Only cache valid responses
-            if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-               cache.put(event.request, networkResponse.clone());
-            }
-            // For CDN scripts (CORS/Opaque), we still want to cache them if possible, 
-            // but we can't check status code easily on opaque responses.
-            if (networkResponse && networkResponse.type === 'opaque') {
-               cache.put(event.request, networkResponse.clone());
-            }
-            return networkResponse;
-          })
-          .catch(() => {
-             // If network fails, return nothing (response will handle cache hit)
-             // Ideally handle offline fallback here
-          });
+    (async () => {
+      try {
+        // 1. Try Network first
+        const networkResponse = await fetch(event.request);
+        
+        // If network fetch works, cache the response (if valid)
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+          const cache = await caches.open(CACHE_NAME);
+          cache.put(event.request, networkResponse.clone());
+        }
+        // Also cache opaque responses (like CDN scripts)
+        if (networkResponse && networkResponse.type === 'opaque') {
+           const cache = await caches.open(CACHE_NAME);
+           cache.put(event.request, networkResponse.clone());
+        }
+        
+        return networkResponse;
 
-        return response || fetchPromise;
-      });
-    })
+      } catch (error) {
+        // 2. If Network fails (Offline), try Cache
+        const cache = await caches.open(CACHE_NAME);
+        const cachedResponse = await cache.match(event.request);
+        
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+
+        // 3. Fallback for Navigation requests (e.g. opening the app via URL)
+        // If the user navigates to /EDITPDF/ but we only have /EDITPDF/index.html cached
+        if (event.request.mode === 'navigate') {
+          return cache.match('./index.html');
+        }
+
+        // Return simple error or let browser handle it
+        throw error;
+      }
+    })()
   );
 });
