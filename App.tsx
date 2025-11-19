@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -128,11 +129,6 @@ const MergeIcon: React.FC<{ className?: string }> = ({ className }) => (
 const DragHandleIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-    </svg>
-);
-const MenuIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
     </svg>
 );
 
@@ -555,9 +551,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
     
-    // Mobile state
-    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
     // Drawing state
     const [activeTool, setActiveTool] = useState<EditorTool>('move');
     const [actionState, setActionState] = useState<ActionState>({ type: 'idle' });
@@ -577,9 +570,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const imageRef = useRef<HTMLImageElement>(null);
     const textInputRef = useRef<HTMLTextAreaElement>(null);
-    const sidebarRef = useRef<HTMLElement>(null);
     const thumbnailRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+    const desktopThumbnailRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+    const sidebarRef = useRef<HTMLDivElement>(null);
+    const thumbnailContainerRef = useRef<HTMLDivElement>(null);
     const pinchState = useRef({ isPinching: false, initialDist: 0, initialZoom: 1 });
+    const lastScrollTime = useRef(0);
 
     const fileMenu = useDropdown();
     const rotateMenu = useDropdown();
@@ -861,14 +857,26 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         });
     };
 
+    const scrollToThumbnail = (pageId: string) => {
+        setTimeout(() => {
+             // Mobile Strip
+             const mobileEl = thumbnailRefs.current.get(pageId);
+             if (mobileEl && thumbnailContainerRef.current && thumbnailContainerRef.current.offsetParent !== null) {
+                  mobileEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+             }
+             // Desktop Sidebar
+             const desktopEl = desktopThumbnailRefs.current.get(pageId);
+             if (desktopEl && sidebarRef.current && sidebarRef.current.offsetParent !== null) {
+                  desktopEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+             }
+        }, 0);
+    };
+
     const handleThumbnailClick = (pageId: string) => {
         if (selectionMode === 'view') {
             setViewedPageId(pageId);
             setSelectedPages(new Set([pageId]));
-            // Close sidebar on mobile after selection
-            if (window.innerWidth < 768) {
-                setIsSidebarOpen(false);
-            }
+            scrollToThumbnail(pageId);
         } else { // 'select' mode
             togglePageSelection(pageId);
         }
@@ -976,38 +984,50 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     }, []); // Empty dependency array as we use ref
 
     // --- Interaction Handlers ---
-    const handleSidebarWheel = useCallback((e: React.WheelEvent) => {
-        e.stopPropagation(); // Prevent main view from zooming
-        const direction = e.deltaY > 0 ? 1 : -1;
-        const currentIndex = state.pages.findIndex(p => p.id === viewedPageId);
-        if (currentIndex === -1) return;
-        const nextIndex = Math.max(0, Math.min(state.pages.length - 1, currentIndex + direction));
-        const nextPage = state.pages[nextIndex];
-        if (nextPage && nextPage.id !== viewedPageId) {
-            setViewedPageId(nextPage.id);
-            setSelectedPages(new Set([nextPage.id]));
-            setTimeout(() => {
-                thumbnailRefs.current.get(nextPage.id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }, 0);
+    // Wheel handler for horizontal scrolling of the thumbnail strip
+    const handleThumbnailWheel = (e: React.WheelEvent) => {
+        if (thumbnailContainerRef.current) {
+             thumbnailContainerRef.current.scrollLeft += e.deltaY;
         }
-    }, [state.pages, viewedPageId]);
+    };
 
     const handleMainViewWheel = (e: React.WheelEvent) => {
         // Prevent default scrolling of the page when inside the canvas area
+        e.preventDefault();
+
+        // LOCK: If drawing tool is active, disable interactions
+        if (isDrawingToolActive) return;
+
+        // If Ctrl is pressed, Zoom (Accessibility/Standard functionality)
         if (e.ctrlKey) {
-             e.preventDefault();
+             const scaleAmount = e.deltaY * -0.001;
+             setZoom(z => Math.max(0.2, Math.min(z + scaleAmount, 5)));
+             return;
         }
 
-        // LOCK: If drawing tool is active, disable zoom entirely
-        if (isDrawingToolActive) {
-            // Explicitly prevent default to stop browser scroll as well, effectively "locking" the view
-            e.preventDefault();
-            return; 
+        // Otherwise, Change Page (Desktop Behavior Request)
+        const now = Date.now();
+        if (now - lastScrollTime.current < 200) return; // Debounce to prevent rapid skipping
+
+        if (e.deltaY > 0) {
+            // Next Page
+             const idx = state.pages.findIndex(p => p.id === viewedPageId);
+             if (idx < state.pages.length - 1) {
+                 const nextId = state.pages[idx + 1].id;
+                 setViewedPageId(nextId);
+                 lastScrollTime.current = now;
+                 scrollToThumbnail(nextId);
+             }
+        } else if (e.deltaY < 0) {
+            // Prev Page
+            const idx = state.pages.findIndex(p => p.id === viewedPageId);
+             if (idx > 0) {
+                 const prevId = state.pages[idx - 1].id;
+                 setViewedPageId(prevId);
+                 lastScrollTime.current = now;
+                 scrollToThumbnail(prevId);
+             }
         }
-        
-        e.preventDefault();
-        const scaleAmount = e.deltaY * -0.001;
-        setZoom(z => Math.max(0.2, Math.min(z + scaleAmount, 5)));
     };
 
     // --- Drawing Logic ---
@@ -1067,16 +1087,31 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     
         const rect = image.getBoundingClientRect(); // This rect INCLUDES pan and zoom transforms.
         
-        const interactionPoint = 'touches' in e ? e.touches[0] : e;
-        const mouseX = interactionPoint.clientX;
-        const mouseY = interactionPoint.clientY;
+        let clientX, clientY;
+
+        // Check for TouchEvent vs MouseEvent
+        // For touch events, we prefer touches[0], but for touchend we need changedTouches[0]
+        if ('touches' in e) {
+             if (e.touches.length > 0) {
+                 clientX = e.touches[0].clientX;
+                 clientY = e.touches[0].clientY;
+             } else if (e.changedTouches.length > 0) {
+                 clientX = e.changedTouches[0].clientX;
+                 clientY = e.changedTouches[0].clientY;
+             } else {
+                 return { x: 0, y: 0 };
+             }
+        } else {
+             clientX = (e as React.MouseEvent).clientX;
+             clientY = (e as React.MouseEvent).clientY;
+        }
 
         const imageCenterX = rect.left + rect.width / 2;
         const imageCenterY = rect.top + rect.height / 2;
         
         // Vector from image center to mouse
-        let vecX = mouseX - imageCenterX;
-        let vecY = mouseY - imageCenterY;
+        let vecX = clientX - imageCenterX;
+        let vecY = clientY - imageCenterY;
     
         // Inverse rotation
         const rotation = viewedPage.rotation;
@@ -1240,6 +1275,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             const startPoint = getCanvasCoordinates(e);
 
             if (isDrawingToolActive) {
+                // Prevent scrolling while drawing
+                e.preventDefault();
                 // Simplified: Touch doesn't support text input for now
                 if (activeTool !== 'text') {
                     setActionState({ type: 'drawing', startPoint });
@@ -1272,6 +1309,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             setPan(p => ({ x: p.x + dx, y: p.y + dy }));
             setActionState(s => ({ ...s, panStartPoint: { x: touch.clientX, y: touch.clientY } }));
         } else if ((actionState.type === 'drawing' || actionState.type === 'moving') && e.touches.length === 1) {
+            // Prevent default to avoid scrolling on mobile
+             e.preventDefault();
              const currentPoint = getCanvasCoordinates(e);
              const { type, startPoint, initialObject } = actionState;
              if (type === 'drawing' && startPoint) {
@@ -1289,7 +1328,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         if (pinchState.current.isPinching) {
             pinchState.current.isPinching = false;
         } else {
-            handleCanvasMouseUp({} as React.MouseEvent<HTMLCanvasElement>); // Simulate mouse up
+            // Pass the original TouchEvent, handleCanvasMouseUp needs to handle extraction of changedTouches
+            handleCanvasMouseUp(e as unknown as React.MouseEvent<HTMLCanvasElement>); 
         }
     };
     
@@ -1499,16 +1539,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 <div className="relative flex items-center h-14 px-3 border-b border-gray-700">
                     {/* Left Section */}
                     <div className="flex-1 flex items-center gap-2 overflow-hidden">
-                         {/* Mobile Sidebar Toggle */}
-                        <button 
-                            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                            className="md:hidden p-1.5 text-gray-300 hover:text-white hover:bg-gray-700 rounded mr-1 shrink-0"
-                        >
-                            <MenuIcon className="w-6 h-6" />
-                        </button>
                         
-                        {/* Page Info & Select Mode - Desktop Only */}
-                        <div className="hidden md:flex items-center gap-2 md:gap-4 shrink-0">
+                        {/* Page Info & Select Mode */}
+                        <div className="flex items-center gap-2 md:gap-4 shrink-0 ml-1">
                             <h2 className="text-xs md:text-sm font-semibold tabular-nums whitespace-nowrap">
                                 {selectionMode === 'view'
                                     ? `頁面 (${viewedPageIndex > -1 ? viewedPageIndex + 1 : 0}/${state.pages.length})`
@@ -1585,11 +1618,17 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     </div>
                 </div>
 
-                {/* Bottom Row (Mobile) / Inline (Desktop): Editing Tools */}
-                <div className="flex items-center justify-center px-3 py-2 bg-gray-900/50 overflow-x-auto no-scrollbar">
-                    <div className="flex items-center gap-3 md:gap-4 min-w-max">
+                {/* Editing Tools Toolbar */}
+                <div className={`
+                    z-30 transition-all
+                    /* Mobile: Vertical, Right side, Floating */
+                    fixed right-2 top-1/2 -translate-y-1/2 flex flex-col gap-4 bg-gray-800/90 p-2 rounded-lg shadow-xl backdrop-blur-sm max-h-[70vh] overflow-y-auto no-scrollbar border border-gray-700
+                    /* Desktop: Static, Horizontal, inside Header */
+                    md:static md:flex-row md:translate-y-0 md:bg-transparent md:shadow-none md:p-2 md:h-auto md:w-full md:justify-center md:overflow-visible md:border-0 md:bg-gray-900/50
+                `}>
+                    <div className="flex flex-col md:flex-row items-center gap-3 md:gap-4">
                         {/* History */}
-                        <div className="flex items-center gap-1 border-r border-gray-600 pr-3">
+                        <div className="flex md:flex-row flex-col items-center gap-1 border-b md:border-b-0 md:border-r border-gray-600 pb-2 md:pb-0 md:pr-3 w-full md:w-auto justify-center">
                             <button onClick={handleUndo} disabled={!canUndo} className="p-2 hover:bg-gray-700 rounded-full disabled:opacity-30" title="上一步 (Ctrl+Z)">
                                 <UndoIcon className="w-5 h-5" />
                             </button>
@@ -1599,7 +1638,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                         </div>
 
                         {/* Drawing Tools */}
-                        <div className="flex items-center gap-2">
+                        <div className="flex md:flex-row flex-col items-center gap-2">
                             <button onClick={() => setActiveTool('move')} title="移動" className={`p-2 rounded-full ${activeTool === 'move' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}> <HandIcon className="w-5 h-5" /> </button>
                             <button onClick={() => setActiveTool('line')} title="直線" className={`p-2 rounded-full ${activeTool === 'line' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}> <LineIcon className="w-5 h-5" /> </button>
                             <button onClick={() => setActiveTool('arrow')} title="箭頭" className={`p-2 rounded-full ${activeTool === 'arrow' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}> <ArrowIcon className="w-5 h-5" /> </button>
@@ -1609,11 +1648,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                         </div>
                         
                         {isDrawingToolActive && (
-                            <div className="flex items-center gap-3 pl-3 border-l border-gray-600">
+                            <div className="flex md:flex-row flex-col items-center gap-3 pt-2 md:pt-0 md:pl-3 border-t md:border-t-0 md:border-l border-gray-600 w-full md:w-auto">
                                 <input type="color" value={drawingColor} onChange={(e) => setDrawingColor(e.target.value)} className="w-8 h-8 rounded bg-transparent cursor-pointer border-none p-0" />
                                 
                                 {activeTool !== 'text' && (
-                                     <div className="flex items-center gap-1">
+                                     <div className="flex md:flex-row flex-col items-center gap-1">
                                         {[2, 5, 10].map(width => (
                                             <button key={width} onClick={() => setStrokeWidth(width)} className={`w-6 h-6 flex items-center justify-center rounded-full ${strokeWidth === width ? 'bg-gray-600' : ''}`}>
                                                 <div className="bg-white rounded-full" style={{width: `${Math.min(width+2, 14)}px`, height: `${Math.min(width+2, 14)}px`}}></div>
@@ -1622,7 +1661,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                     </div>
                                 )}
                                  {activeTool === 'text' && (
-                                    <div className="flex items-center gap-2 md:gap-3">
+                                    <div className="flex md:flex-row flex-col items-center gap-2 md:gap-3">
                                         {/* Font Size */}
                                         <div className="flex items-center gap-1">
                                             <input type="number" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value, 10))} className="bg-gray-700 border border-gray-600 rounded w-10 md:w-12 px-1 text-sm text-center text-white" />
@@ -1674,45 +1713,56 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 </div>
             </header>
 
-            <div className="flex-grow flex overflow-hidden relative">
-                {/* Mobile Sidebar Backdrop */}
-                {isSidebarOpen && (
-                    <div 
-                        className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden"
-                        onClick={() => setIsSidebarOpen(false)}
-                    />
-                )}
-
-                {/* Sidebar (Thumbnails) - Responsive Drawer */}
-                <aside 
+            <div className="flex flex-1 overflow-hidden relative">
+                {/* Desktop Sidebar (Left) */}
+                <div 
                     ref={sidebarRef}
-                    className={`
-                        flex-shrink-0 bg-gray-800 overflow-y-auto transition-transform duration-300 ease-in-out z-40
-                        fixed inset-y-0 left-0 w-64 shadow-2xl transform
-                        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-                        md:relative md:translate-x-0 md:w-56 md:shadow-none md:block
-                    `}
-                    onWheel={handleSidebarWheel}
+                    className="hidden md:flex flex-col w-48 bg-gray-800 border-r border-gray-700 overflow-y-auto custom-scrollbar flex-shrink-0"
                 >
-                    {/* Mobile Sidebar Header Controls */}
-                    <div className="md:hidden flex items-center justify-between p-3 border-b border-gray-700 bg-gray-800 sticky top-0 z-10">
-                         <h2 className="text-sm font-semibold text-white tabular-nums">
-                            {selectionMode === 'view'
-                                ? `頁面 (${viewedPageIndex > -1 ? viewedPageIndex + 1 : 0}/${state.pages.length})`
-                                : `已選取 ${selectedPages.size}`
-                            }
-                        </h2>
-                        <button 
-                            onClick={() => setSelectionMode(m => m === 'view' ? 'select' : 'view')} 
-                            className={`p-2 rounded hover:bg-gray-700 ${selectionMode === 'select' ? 'text-blue-400' : 'text-gray-400'}`}
-                            title={selectionMode === 'view' ? '切換至多選模式' : '切換至檢視模式'}
-                        >
-                            {selectionMode === 'view' ? <CheckSquareIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
-                        </button>
-                    </div>
+                     <div className="p-4 space-y-3">
+                         {state.pages.map((page, index) => (
+                            <div key={page.id}
+                                draggable
+                                onDragStart={() => setDraggedId(page.id)}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={() => handleDrop(page.id)}
+                                onDragEnd={() => setDraggedId(null)}
+                                ref={el => {
+                                    if (el) desktopThumbnailRefs.current.set(page.id, el);
+                                    else desktopThumbnailRefs.current.delete(page.id);
+                                }}
+                                onClick={() => handleThumbnailClick(page.id)}
+                                className={`
+                                    relative w-full aspect-[3/4] group cursor-pointer rounded overflow-hidden border-2 transition-all bg-gray-900
+                                    ${selectedPages.has(page.id) ? 'border-blue-500 ring-1 ring-blue-500' : 'border-transparent hover:border-gray-600'}
+                                    ${viewedPageId === page.id && !selectedPages.has(page.id) ? 'border-gray-500' : ''}
+                                    ${draggedId === page.id ? 'opacity-50' : ''}
+                                `}
+                            >
+                                <img 
+                                    src={pageUrlCache.get(page.id)} 
+                                    className="w-full h-full object-contain" 
+                                    style={{transform: `rotate(${page.rotation}deg)`}} 
+                                    alt={`Page ${index + 1}`}
+                                />
+                                <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
+                                    {index + 1}
+                                </div>
+                            </div>
+                         ))}
+                     </div>
+                </div>
 
-                     <div className="grid grid-cols-2 md:grid-cols-1 gap-2 p-2 pb-20 md:pb-0">
-                        {state.pages.map(page => (
+                {/* Right Column (Mobile Strip + Canvas) */}
+                <div className="flex flex-col flex-1 min-w-0 relative">
+                    
+                    {/* Horizontal Thumbnail Strip (Mobile Only) */}
+                    <div 
+                        ref={thumbnailContainerRef}
+                        className="md:hidden bg-gray-800 border-b border-gray-700 h-24 flex items-center px-4 gap-3 overflow-x-auto no-scrollbar flex-shrink-0 relative z-30"
+                        onWheel={handleThumbnailWheel}
+                    >
+                        {state.pages.map((page, index) => (
                             <div key={page.id} 
                                 ref={el => {
                                     if (el) thumbnailRefs.current.set(page.id, el);
@@ -1723,85 +1773,97 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 onDragOver={(e) => e.preventDefault()}
                                 onDrop={() => handleDrop(page.id)}
                                 onDragEnd={() => setDraggedId(null)}
-                                className={`relative aspect-square group cursor-pointer border-2 bg-gray-900/50 rounded-md overflow-hidden ${selectedPages.has(page.id) ? 'border-blue-500' : 'border-transparent'} ${draggedId === page.id ? 'opacity-50' : ''}`}
+                                className={`
+                                    relative h-20 min-w-[3rem] group cursor-pointer rounded overflow-hidden flex-shrink-0 border-2 transition-all
+                                    ${selectedPages.has(page.id) ? 'border-blue-500 ring-1 ring-blue-500' : 'border-transparent hover:border-gray-600'}
+                                    ${viewedPageId === page.id && !selectedPages.has(page.id) ? 'border-gray-500' : ''}
+                                    ${draggedId === page.id ? 'opacity-50' : ''}
+                                `}
                                 onClick={() => handleThumbnailClick(page.id)}
                             >
-                                <img src={pageUrlCache.get(page.id)} className="w-full h-full object-contain" style={{transform: `rotate(${page.rotation}deg)`}} />
+                                <img 
+                                    src={pageUrlCache.get(page.id)} 
+                                    className="h-full w-auto object-contain bg-gray-900" 
+                                    style={{transform: `rotate(${page.rotation}deg)`}} 
+                                    alt={`Page ${index + 1}`}
+                                />
                                 <div className="absolute bottom-0 right-0 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-tl">
-                                    {state.pages.findIndex(p => p.id === page.id) + 1}
+                                    {index + 1}
                                 </div>
                             </div>
                         ))}
                     </div>
-                </aside>
-                
-                {/* Main Canvas Area */}
-                <main className="flex-1 p-4 flex flex-col bg-gray-900 relative overflow-hidden" onWheel={handleMainViewWheel}>
-                    <div className="flex-grow overflow-hidden flex items-center justify-center">
-                        {viewedPage ? (
-                            <div className="relative touch-none select-none" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transition: 'transform 0.2s ease-in-out', transformOrigin: 'center center' }}>
-                               <img 
-                                    ref={imageRef} 
-                                    src={pageUrlCache.get(viewedPage.id)} 
-                                    className="max-w-full max-h-full object-contain shadow-lg transition-transform duration-200 pointer-events-none" 
-                                    style={{transform: `rotate(${viewedPage.rotation}deg)`}}
-                                    onLoad={() => setImageLoadedCount(c => c + 1)}
-                               />
-                               <canvas
-                                    ref={canvasRef}
-                                    className={`absolute top-0 left-0 pointer-events-auto z-10`}
-                                    style={{ transform: `rotate(${viewedPage.rotation}deg)` }}
-                                    onMouseDown={handleCanvasMouseDown}
-                                    onMouseMove={handleCanvasMouseMove}
-                                    onMouseUp={handleCanvasMouseUp}
-                                    onMouseLeave={handleCanvasMouseUp}
-                                    onTouchStart={handleCanvasTouchStart}
-                                    onTouchMove={handleCanvasTouchMove}
-                                    onTouchEnd={handleCanvasTouchEnd}
-                               />
-                               {textInput.show && (
-                                   <textarea
-                                       ref={textInputRef}
-                                       value={textInput.value}
-                                       onChange={(e) => setTextInput(t => ({...t, value: e.target.value}))}
-                                       onBlur={handleTextBlur}
-                                       className="absolute border p-1 z-20 overflow-auto resize whitespace-pre"
-                                       style={{ 
-                                           left: textInput.x * zoom, 
-                                           top: textInput.y * zoom, 
-                                           fontSize: fontSize * zoom,
-                                           fontFamily: fontFamily,
-                                           color: drawingColor,
-                                           borderColor: drawingColor,
-                                           backgroundColor: textBackgroundColor,
-                                           transform: `rotate(${viewedPage.rotation}deg)`,
-                                           transformOrigin: 'top left',
-                                           minWidth: `${100 * zoom}px`,
-                                           minHeight: `${(fontSize * 1.5) * zoom}px`
-                                        }}
-                                   />
-                               )}
-                            </div>
-                            ) : <p className="text-gray-500">沒有頁面可顯示</p>
-                        }
-                    </div>
-                    
-                    {/* Zoom Controls */}
-                    {viewedPage && (
-                        <div className="absolute bottom-6 right-6 z-30 bg-gray-800/90 backdrop-blur-sm rounded-full flex items-center text-white shadow-xl border border-gray-700">
-                            <button onClick={handleZoomOut} className="p-3 hover:bg-gray-700 rounded-full transition-colors" title="縮小">
-                                <MinusIcon className="w-5 h-5" />
-                            </button>
-                            <span className="px-1 text-sm font-mono font-semibold w-12 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
-                             <button onClick={handleResetZoom} className="p-3 hover:bg-gray-700 rounded-full transition-colors" title="恢復 100%">
-                                <ResetZoomIcon className="w-5 h-5" />
-                            </button>
-                            <button onClick={handleZoomIn} className="p-3 hover:bg-gray-700 rounded-full transition-colors" title="放大">
-                                <PlusIcon className="w-5 h-5" />
-                            </button>
+
+                    {/* Main Canvas Area */}
+                    <main className="flex-1 p-4 flex flex-col bg-gray-900 relative overflow-hidden" onWheel={handleMainViewWheel}>
+                        <div className="flex-grow overflow-hidden flex items-center justify-center">
+                            {viewedPage ? (
+                                <div className="relative touch-none select-none" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transition: 'transform 0.2s ease-in-out', transformOrigin: 'center center' }}>
+                                <img 
+                                        ref={imageRef} 
+                                        src={pageUrlCache.get(viewedPage.id)} 
+                                        className="max-w-full max-h-full object-contain shadow-lg transition-transform duration-200 pointer-events-none" 
+                                        style={{transform: `rotate(${viewedPage.rotation}deg)`}}
+                                        onLoad={() => setImageLoadedCount(c => c + 1)}
+                                />
+                                <canvas
+                                        ref={canvasRef}
+                                        className={`absolute top-0 left-0 pointer-events-auto z-10`}
+                                        style={{ transform: `rotate(${viewedPage.rotation}deg)` }}
+                                        onMouseDown={handleCanvasMouseDown}
+                                        onMouseMove={handleCanvasMouseMove}
+                                        onMouseUp={handleCanvasMouseUp}
+                                        onMouseLeave={handleCanvasMouseUp}
+                                        onTouchStart={handleCanvasTouchStart}
+                                        onTouchMove={handleCanvasTouchMove}
+                                        onTouchEnd={handleCanvasTouchEnd}
+                                />
+                                {textInput.show && (
+                                    <textarea
+                                        ref={textInputRef}
+                                        value={textInput.value}
+                                        onChange={(e) => setTextInput(t => ({...t, value: e.target.value}))}
+                                        onBlur={handleTextBlur}
+                                        className="absolute border p-1 z-20 overflow-auto resize whitespace-pre"
+                                        style={{ 
+                                            left: textInput.x * zoom, 
+                                            top: textInput.y * zoom, 
+                                            fontSize: fontSize * zoom,
+                                            fontFamily: fontFamily,
+                                            color: drawingColor,
+                                            borderColor: drawingColor,
+                                            backgroundColor: textBackgroundColor,
+                                            transform: `rotate(${viewedPage.rotation}deg)`,
+                                            transformOrigin: 'top left',
+                                            minWidth: `${100 * zoom}px`,
+                                            minHeight: `${(fontSize * 1.5) * zoom}px`
+                                            }}
+                                    />
+                                )}
+                                </div>
+                                ) : <p className="text-gray-500">沒有頁面可顯示</p>
+                            }
                         </div>
-                    )}
-                </main>
+                        
+                        {/* Zoom Controls (Hidden on Mobile, Visible on Desktop) */}
+                        {viewedPage && (
+                            <div className="hidden md:flex flex-col-reverse absolute bottom-24 right-2 md:bottom-6 md:right-6 z-30 gap-2">
+                                <div className="bg-gray-800/90 backdrop-blur-sm rounded-lg items-center text-white shadow-xl border border-gray-700 flex flex-col md:flex-row md:rounded-full">
+                                    <button onClick={handleZoomOut} className="p-3 hover:bg-gray-700 rounded-lg md:rounded-full transition-colors" title="縮小">
+                                        <MinusIcon className="w-5 h-5" />
+                                    </button>
+                                    <span className="px-1 py-1 md:py-0 text-sm font-mono font-semibold w-12 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+                                     <button onClick={handleResetZoom} className="p-3 hover:bg-gray-700 rounded-lg md:rounded-full transition-colors" title="恢復 100%">
+                                        <ResetZoomIcon className="w-5 h-5" />
+                                    </button>
+                                    <button onClick={handleZoomIn} className="p-3 hover:bg-gray-700 rounded-lg md:rounded-full transition-colors" title="放大">
+                                        <PlusIcon className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+                </div>
             </div>
         </div>
     );
