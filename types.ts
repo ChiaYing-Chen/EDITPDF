@@ -4,6 +4,7 @@ export interface ProjectMetadata {
   name: string;
   timestamp: number;
   pageCount: number;
+  fileSize?: number;
 }
 
 export type DrawingTool = 'line' | 'arrow' | 'rect' | 'circle' | 'text' | 'image-placeholder';
@@ -34,6 +35,7 @@ export interface StoredProject {
   name: string;
   pages: PageData[];
   timestamp: number;
+  fileSize?: number;
 }
 
 export interface EditorPageProps {

@@ -8,6 +8,27 @@ import { ProjectMetadata, StoredProject, EditorPageProps, EditorPageState, Compr
 // Configure the PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://esm.sh/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
 
+// --- Helper Functions ---
+const formatBytes = (bytes: number = 0, decimals = 2) => {
+  if (!+bytes) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+};
+
+const formatDate = (timestamp: number) => {
+  return new Date(timestamp).toLocaleString('zh-TW', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+};
+
 
 // --- Icons ---
 const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -145,6 +166,11 @@ const XIcon: React.FC<{ className?: string }> = ({ className }) => (
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
     </svg>
 );
+const CompressIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+    </svg>
+);
 
 
 // --- Dexie DB Service ---
@@ -160,17 +186,22 @@ db.version(1).stores({
 const dbService = {
     getProjectsMetadata: async (): Promise<ProjectMetadata[]> => {
         const projects = await db.projects.orderBy('timestamp').reverse().toArray();
-        return projects.map(({ id, name, timestamp, pages }) => ({
+        return projects.map(({ id, name, timestamp, pages, fileSize }) => ({
             id,
             name,
             timestamp,
             pageCount: pages.length,
+            // If fileSize is missing (old data), calculate it roughly from blobs
+            fileSize: fileSize ?? pages.reduce((acc, page) => acc + page.data.size, 0)
         }));
     },
     getProjectData: (id: string): Promise<StoredProject | undefined> => {
         return db.projects.get(id);
     },
     saveProject: (project: StoredProject): Promise<string> => {
+        // Calculate file size on save
+        const size = project.pages.reduce((acc, page) => acc + page.data.size, 0);
+        project.fileSize = size;
         return db.projects.put(project);
     },
     deleteProject: (id: string): Promise<void> => {
@@ -288,7 +319,7 @@ const FileSortModal: React.FC<{
                             </div>
                             <div className="flex-grow min-w-0">
                                 <p className="truncate font-medium text-slate-200">{item.name}</p>
-                                <p className="text-xs text-slate-500">{(item.file.size / 1024 / 1024).toFixed(2)} MB</p>
+                                <p className="text-xs text-slate-500">{formatBytes(item.file.size)}</p>
                             </div>
                             <div className="flex items-center ml-3">
                                 <input 
@@ -427,11 +458,15 @@ const MergeSortPage: React.FC<{
             objects: []
         }));
 
+        // Calculate initial size
+        const totalSize = projectPages.reduce((acc, p) => acc + p.data.size, 0);
+
         const newProject: StoredProject = {
             id: `proj_merge_${Date.now()}`,
             name: projectName,
             pages: projectPages,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            fileSize: totalSize
         };
         onSave(newProject);
     };
@@ -551,6 +586,8 @@ type ActionState = {
     handle?: string;
 };
 
+type CompressionLevel = 'high' | 'standard' | 'low';
+
 const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => {
     // ... (Editor logic remains mostly same, just subtle style tweaks)
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -580,6 +617,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
     
+    // Compression State
+    const [showCompressModal, setShowCompressModal] = useState(false);
+    const [compressLevel, setCompressLevel] = useState<CompressionLevel>('standard');
+
     // Drawing state
     const [activeTool, setActiveTool] = useState<EditorTool>('move');
     const [actionState, setActionState] = useState<ActionState>({ type: 'idle' });
@@ -614,6 +655,17 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const viewedPageIndex = state.pages.findIndex(p => p.id === viewedPageId);
     const selectedObject = viewedPage?.objects.find(o => o.id === selectedObjectId) || null;
     const isDrawingToolActive = activeTool && activeTool !== 'move';
+
+    // Calculate Current Project Size from pages
+    const currentProjectSize = state.pages.reduce((acc, page) => acc + page.data.size, 0);
+    
+    // Estimate compressed size based on heuristic
+    const getEstimatedSize = () => {
+        let ratio = 0.7;
+        if (compressLevel === 'high') ratio = 0.9;
+        if (compressLevel === 'low') ratio = 0.4;
+        return currentProjectSize * ratio;
+    };
 
     // Optimized URL Cache Logic
     useEffect(() => {
@@ -710,6 +762,77 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const canUndo = historyIndex > 0;
     const canRedo = historyIndex < history.length - 1;
+
+    const handleCompress = async () => {
+        setIsLoading(true);
+        try {
+            let scale = 1.0;
+            let quality = 0.75;
+            
+            if (compressLevel === 'high') {
+                scale = 1.0;
+                quality = 0.85;
+            } else if (compressLevel === 'standard') {
+                scale = 1.0;
+                quality = 0.6;
+            } else if (compressLevel === 'low') {
+                scale = 0.7;
+                quality = 0.5;
+            }
+
+            const newPages = [...state.pages];
+            
+            for (let i = 0; i < newPages.length; i++) {
+                const page = newPages[i];
+                const img = new Image();
+                const url = URL.createObjectURL(page.data);
+                img.src = url;
+                await new Promise((resolve, reject) => {
+                    img.onload = resolve;
+                    img.onerror = reject;
+                });
+
+                const canvas = document.createElement('canvas');
+                const targetWidth = Math.floor(img.naturalWidth * scale);
+                const targetHeight = Math.floor(img.naturalHeight * scale);
+                canvas.width = targetWidth;
+                canvas.height = targetHeight;
+                
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    // High quality smoothing
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+                    
+                    const blob = await new Promise<Blob | null>(resolve => 
+                        canvas.toBlob(resolve, 'image/jpeg', quality)
+                    );
+                    
+                    if (blob) {
+                        newPages[i] = { ...page, data: blob };
+                    }
+                }
+                URL.revokeObjectURL(url);
+            }
+
+            updateState({ ...state, pages: newPages });
+            
+            // Auto save after compression
+            const projectToSave: StoredProject = { id: state.id, name: projectName, pages: newPages, timestamp: Date.now() };
+            await onSave(projectToSave, projectName);
+            setIsDirty(false);
+            setShowSaveSuccess(true); 
+            setTimeout(() => setShowSaveSuccess(false), 2000);
+
+        } catch (e) {
+            console.error("Compression failed:", e);
+            alert('壓縮過程中發生錯誤。');
+        } finally {
+            setIsLoading(false);
+            setShowCompressModal(false);
+        }
+    };
     
     // ... (generatePdf logic is generic, omitted for brevity as it's unchanged)
     const createPdfBlob = async (pagesToExport: EditorPageState['pages']): Promise<Blob | null> => {
@@ -1211,9 +1334,65 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     return (
         <div className="flex flex-col h-screen bg-slate-900">
              {isLoading && (
-                <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center z-50">
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center z-[60]">
                     <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
                     <p className="text-white mt-6 text-lg font-medium tracking-wide">處理中...</p>
+                </div>
+            )}
+
+            {/* Compression Modal */}
+            {showCompressModal && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-md overflow-hidden">
+                        <div className="p-6 border-b border-slate-700">
+                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                <CompressIcon className="w-6 h-6 text-blue-400" />
+                                壓縮 PDF
+                            </h3>
+                        </div>
+                        <div className="p-6 space-y-6">
+                            <div className="bg-slate-700/50 p-4 rounded-xl border border-slate-600/50">
+                                <p className="text-slate-400 text-sm mb-1">目前檔案大小</p>
+                                <p className="text-2xl font-mono font-bold text-white">{formatBytes(currentProjectSize)}</p>
+                            </div>
+
+                            <div className="space-y-3">
+                                <label className="text-sm font-medium text-slate-300">選擇壓縮等級</label>
+                                <div className="grid gap-3">
+                                    <label className={`flex items-center p-3 rounded-xl border cursor-pointer transition-all ${compressLevel === 'high' ? 'bg-blue-600/20 border-blue-500' : 'bg-slate-700 border-slate-600 hover:bg-slate-600'}`}>
+                                        <input type="radio" name="compression" className="w-4 h-4 text-blue-500 focus:ring-offset-slate-800" checked={compressLevel === 'high'} onChange={() => setCompressLevel('high')} />
+                                        <div className="ml-3">
+                                            <span className="block text-sm font-bold text-white">輕微壓縮 (高品質)</span>
+                                            <span className="block text-xs text-slate-400">保持原解析度，畫質最佳</span>
+                                        </div>
+                                    </label>
+                                    <label className={`flex items-center p-3 rounded-xl border cursor-pointer transition-all ${compressLevel === 'standard' ? 'bg-blue-600/20 border-blue-500' : 'bg-slate-700 border-slate-600 hover:bg-slate-600'}`}>
+                                        <input type="radio" name="compression" className="w-4 h-4 text-blue-500 focus:ring-offset-slate-800" checked={compressLevel === 'standard'} onChange={() => setCompressLevel('standard')} />
+                                        <div className="ml-3">
+                                            <span className="block text-sm font-bold text-white">標準壓縮 (推薦)</span>
+                                            <span className="block text-xs text-slate-400">保持原解析度，平衡畫質與大小</span>
+                                        </div>
+                                    </label>
+                                    <label className={`flex items-center p-3 rounded-xl border cursor-pointer transition-all ${compressLevel === 'low' ? 'bg-blue-600/20 border-blue-500' : 'bg-slate-700 border-slate-600 hover:bg-slate-600'}`}>
+                                        <input type="radio" name="compression" className="w-4 h-4 text-blue-500 focus:ring-offset-slate-800" checked={compressLevel === 'low'} onChange={() => setCompressLevel('low')} />
+                                        <div className="ml-3">
+                                            <span className="block text-sm font-bold text-white">強力壓縮 (最小檔案)</span>
+                                            <span className="block text-xs text-slate-400">降低解析度 (0.7x)，檔案最小</span>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between bg-indigo-900/20 p-3 rounded-lg border border-indigo-500/30">
+                                <span className="text-sm text-indigo-200">預估壓縮後大小</span>
+                                <span className="font-mono font-bold text-indigo-300">~{formatBytes(getEstimatedSize())}</span>
+                            </div>
+                        </div>
+                        <div className="p-4 bg-slate-800/50 border-t border-slate-700 flex justify-end gap-3">
+                            <button onClick={() => setShowCompressModal(false)} className="px-5 py-2.5 rounded-xl text-slate-300 hover:bg-slate-700 transition-colors text-sm font-medium">取消</button>
+                            <button onClick={handleCompress} className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold shadow-lg shadow-blue-500/25 text-sm transition-all">開始壓縮</button>
+                        </div>
+                    </div>
                 </div>
             )}
             
@@ -1247,9 +1426,13 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 <FileIcon className="w-4 h-4" /> <span className="hidden md:inline">檔案</span>
                             </button>
                             {fileMenu.isOpen && (
-                                <div className="absolute left-0 mt-2 w-44 bg-slate-700 rounded-md shadow-lg py-1 z-50 border border-slate-600">
+                                <div className="absolute left-0 mt-2 w-56 bg-slate-700 rounded-md shadow-lg py-1 z-50 border border-slate-600">
                                     <button onClick={handleAddPages} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 flex items-center gap-2">
                                          <PlusIcon className="w-4 h-4" /> 新增頁面/圖片
+                                    </button>
+                                    <div className="border-t border-slate-600 my-1"></div>
+                                    <button onClick={() => { fileMenu.close(); setShowCompressModal(true); }} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 flex items-center gap-2">
+                                         <CompressIcon className="w-4 h-4" /> 壓縮檔案
                                     </button>
                                     <div className="border-t border-slate-600 my-1"></div>
                                     <a href="#" onClick={(e) => { e.preventDefault(); handleSaveAndDownload(); }} className="flex items-center gap-2 px-4 py-2 text-sm text-white hover:bg-slate-600">
@@ -1586,7 +1769,11 @@ const App: React.FC = () => {
             } else if (file.type.startsWith('image/')) { newPages.push({ id: `page_${Date.now()}_${i}`, data: file, rotation: 0, objects: [] }); }
         }
         if (newPages.length === 0) { throw new Error("No valid pages created"); }
-        const newProject: StoredProject = { id: `proj_${Date.now()}`, name: sortedFiles.length === 1 ? sortedFiles[0].name : `新專案-${new Date().toLocaleDateString()}`, pages: newPages, timestamp: Date.now() };
+        
+        // Initial size calculation
+        const totalSize = newPages.reduce((acc, p) => acc + p.data.size, 0);
+
+        const newProject: StoredProject = { id: `proj_${Date.now()}`, name: sortedFiles.length === 1 ? sortedFiles[0].name : `新專案-${new Date().toLocaleDateString()}`, pages: newPages, timestamp: Date.now(), fileSize: totalSize };
         await dbService.saveProject(newProject);
         setCurrentProject(newProject);
         setView('editor');
@@ -1699,12 +1886,19 @@ const App: React.FC = () => {
                             {/* Bottom Info Area */}
                             <div className="p-4 bg-slate-900 border-t border-slate-800 group-hover:border-indigo-500/20 transition-colors">
                                 <h3 className="font-bold text-base mb-1 truncate text-slate-200 group-hover:text-indigo-300 transition-colors">{project.name}</h3>
-                                <div className="flex items-center justify-between text-xs font-medium text-slate-500 mt-2">
-                                     <span>{new Date(project.timestamp).toLocaleDateString()}</span>
-                                     <span className="flex items-center gap-1">
-                                        <FileIcon className="w-3 h-3" />
-                                        {project.pageCount} 頁
-                                     </span>
+                                <div className="grid grid-cols-2 gap-2 mt-3">
+                                     <div className="flex flex-col gap-0.5">
+                                         <span className="text-[10px] uppercase tracking-wider text-slate-600 font-semibold">編輯時間</span>
+                                         <span className="text-xs text-slate-400 font-medium">{formatDate(project.timestamp).split(' ')[0]}</span>
+                                         <span className="text-[10px] text-slate-500">{formatDate(project.timestamp).split(' ')[1]}</span>
+                                     </div>
+                                     <div className="flex flex-col gap-0.5 items-end">
+                                          <span className="text-[10px] uppercase tracking-wider text-slate-600 font-semibold">資訊</span>
+                                          <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
+                                              {project.pageCount} 頁
+                                          </span>
+                                          <span className="text-[10px] text-slate-500">{formatBytes(project.fileSize)}</span>
+                                     </div>
                                 </div>
                             </div>
                         </div>
