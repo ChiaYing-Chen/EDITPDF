@@ -110,22 +110,27 @@ const ResetZoomIcon: React.FC<{ className?: string }> = ({ className }) => (
     <text x="12" y="15" textAnchor="middle" fontSize="8" fill="currentColor" stroke="none" fontWeight="bold">100</text>
   </svg>
 );
+const MergeIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+    </svg>
+);
+const DragHandleIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+    </svg>
+);
 
 
 // --- Dexie DB Service ---
-class ProjectDB extends Dexie {
-    // Fix: Use the `Table` type directly from 'dexie' for correct type definition.
-    projects!: Table<StoredProject, string>;
+// Use functional instantiation to avoid class inheritance type issues in some environments
+const db = new Dexie('PDFEditorDB') as Dexie & {
+    projects: Table<StoredProject, string>;
+};
 
-    constructor() {
-        super('PDFEditorDB');
-        this.version(1).stores({
-            projects: 'id, name, timestamp', // Primary key and indexed properties
-        });
-    }
-}
-
-const db = new ProjectDB();
+db.version(1).stores({
+    projects: 'id, name, timestamp', // Primary key and indexed properties
+});
 
 const dbService = {
     getProjectsMetadata: async (): Promise<ProjectMetadata[]> => {
@@ -167,6 +172,337 @@ const useDropdown = () => {
     const close = () => setIsOpen(false);
 
     return { isOpen, ref, toggle, close };
+};
+
+
+// --- Types for Merge Feature ---
+interface MergeFileData {
+    id: string;
+    file: File;
+    color: string;
+    name: string;
+}
+
+interface MergePageData {
+    id: string;
+    data: Blob; // JPEG blob
+    originalFileId: string;
+    originalPageNum: number;
+    color: string; // Cached color for rendering
+    rotation: 0 | 90 | 180 | 270;
+}
+
+// --- Components for Merge Feature ---
+
+const FILE_COLORS = [
+    '#3B82F6', // Blue
+    '#10B981', // Green
+    '#F59E0B', // Yellow
+    '#EF4444', // Red
+    '#8B5CF6', // Purple
+    '#EC4899', // Pink
+    '#6366F1', // Indigo
+    '#14B8A6', // Teal
+];
+
+const FileSortModal: React.FC<{
+    files: File[];
+    onCancel: () => void;
+    onConfirm: (sortedFiles: MergeFileData[]) => void;
+}> = ({ files, onCancel, onConfirm }) => {
+    const [fileList, setFileList] = useState<MergeFileData[]>([]);
+
+    useEffect(() => {
+        // Initialize with default colors
+        const initialList = files.map((f, idx) => ({
+            id: `file_${Date.now()}_${idx}`,
+            file: f,
+            name: f.name,
+            color: FILE_COLORS[idx % FILE_COLORS.length]
+        }));
+        setFileList(initialList);
+    }, [files]);
+
+    const moveFile = (index: number, direction: -1 | 1) => {
+        const newList = [...fileList];
+        const [movedItem] = newList.splice(index, 1);
+        newList.splice(index + direction, 0, movedItem);
+        setFileList(newList);
+    };
+
+    const changeColor = (id: string, color: string) => {
+        setFileList(prev => prev.map(f => f.id === id ? { ...f, color } : f));
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 backdrop-blur-sm">
+            <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6 text-white">
+                <h2 className="text-xl font-bold mb-4">合併設定：文件排序與標記</h2>
+                <p className="text-sm text-gray-400 mb-4">請調整文件順序，並設定顏色以便在後續步驟中識別。</p>
+                
+                <div className="max-h-[60vh] overflow-y-auto space-y-2 mb-6 pr-2">
+                    {fileList.map((item, index) => (
+                        <div key={item.id} className="flex items-center bg-gray-700 p-3 rounded border-l-4" style={{ borderColor: item.color }}>
+                            <div className="flex flex-col gap-1 mr-2">
+                                <button 
+                                    onClick={() => moveFile(index, -1)} 
+                                    disabled={index === 0}
+                                    className="text-gray-400 hover:text-white disabled:opacity-30"
+                                >
+                                    ▲
+                                </button>
+                                <button 
+                                    onClick={() => moveFile(index, 1)} 
+                                    disabled={index === fileList.length - 1}
+                                    className="text-gray-400 hover:text-white disabled:opacity-30"
+                                >
+                                    ▼
+                                </button>
+                            </div>
+                            <div className="flex-grow min-w-0">
+                                <p className="truncate font-medium">{item.name}</p>
+                                <p className="text-xs text-gray-400">{(item.file.size / 1024 / 1024).toFixed(2)} MB</p>
+                            </div>
+                            <div className="flex items-center gap-2 ml-3">
+                                <input 
+                                    type="color" 
+                                    value={item.color} 
+                                    onChange={(e) => changeColor(item.id, e.target.value)}
+                                    className="w-8 h-8 rounded cursor-pointer bg-transparent border-none"
+                                />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="flex justify-end gap-3">
+                    <button onClick={onCancel} className="px-4 py-2 rounded bg-gray-600 hover:bg-gray-500 text-white">取消</button>
+                    <button onClick={() => onConfirm(fileList)} className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold">開始合併處理</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const MergeSortPage: React.FC<{
+    sortedFiles: MergeFileData[];
+    onSave: (project: StoredProject) => void;
+    onCancel: () => void;
+}> = ({ sortedFiles, onSave, onCancel }) => {
+    const [pages, setPages] = useState<MergePageData[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [loadingProgress, setLoadingProgress] = useState("");
+    const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+    const [projectName, setProjectName] = useState(`合併專案-${new Date().toLocaleDateString()}`);
+    const [urlCache, setUrlCache] = useState<Map<string, string>>(new Map());
+
+    useEffect(() => {
+        const processFiles = async () => {
+            setLoading(true);
+            const allPages: MergePageData[] = [];
+            
+            try {
+                for (let fIdx = 0; fIdx < sortedFiles.length; fIdx++) {
+                    const fileData = sortedFiles[fIdx];
+                    setLoadingProgress(`正在處理檔案 (${fIdx + 1}/${sortedFiles.length}): ${fileData.name}`);
+                    
+                    const arrayBuffer = await fileData.file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const viewport = page.getViewport({ scale: 1.0 }); // Thumbnail scale
+                        const canvas = document.createElement('canvas');
+                        const context = canvas.getContext('2d');
+                        if(!context) continue;
+
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+
+                         const renderContext = {
+                            canvasContext: context,
+                            viewport: viewport,
+                            canvas: canvas, // Include canvas in renderContext for compatibility
+                        };
+                        await page.render(renderContext).promise;
+                        
+                        const blob = await new Promise<Blob | null>(resolve => 
+                            canvas.toBlob(resolve, 'image/jpeg', CompressionQuality.NORMAL)
+                        );
+
+                        if (blob) {
+                            allPages.push({
+                                id: `merge_p_${fIdx}_${i}_${Date.now()}`,
+                                data: blob,
+                                originalFileId: fileData.id,
+                                originalPageNum: i,
+                                color: fileData.color,
+                                rotation: 0
+                            });
+                        }
+                    }
+                }
+                setPages(allPages);
+            } catch (e) {
+                console.error("Merge processing error:", e);
+                alert("處理 PDF 時發生錯誤，請重試。");
+                onCancel();
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        processFiles();
+    }, [sortedFiles, onCancel]);
+
+    // Update URL cache when pages change
+    useEffect(() => {
+        const newCache = new Map<string, string>();
+        pages.forEach(p => {
+            newCache.set(p.id, URL.createObjectURL(p.data));
+        });
+        setUrlCache(newCache);
+        return () => {
+            newCache.forEach(url => URL.revokeObjectURL(url));
+        };
+    }, [pages]);
+
+    const handleDragStart = (e: React.DragEvent, index: number) => {
+        setDraggedIndex(index);
+        e.dataTransfer.effectAllowed = "move";
+        // Transparent ghost image roughly
+        const el = e.currentTarget as HTMLElement;
+        el.style.opacity = '0.5';
+    };
+
+    const handleDragEnd = (e: React.DragEvent) => {
+        setDraggedIndex(null);
+        (e.currentTarget as HTMLElement).style.opacity = '1';
+    };
+
+    const handleDragOver = (e: React.DragEvent, index: number) => {
+        e.preventDefault();
+        if (draggedIndex === null || draggedIndex === index) return;
+        
+        const newPages = [...pages];
+        const [draggedItem] = newPages.splice(draggedIndex, 1);
+        newPages.splice(index, 0, draggedItem);
+        
+        setPages(newPages);
+        setDraggedIndex(index);
+    };
+
+    const handleFinish = () => {
+        const projectPages: PageData[] = pages.map((p, idx) => ({
+            id: `page_${Date.now()}_${idx}`, // Re-generate IDs for the clean project
+            data: p.data,
+            rotation: p.rotation,
+            objects: []
+        }));
+
+        const newProject: StoredProject = {
+            id: `proj_merge_${Date.now()}`,
+            name: projectName,
+            pages: projectPages
+        };
+        onSave(newProject);
+    };
+
+    const removePage = (index: number) => {
+        const newPages = [...pages];
+        newPages.splice(index, 1);
+        setPages(newPages);
+    };
+
+    const rotatePage = (index: number) => {
+        const newPages = [...pages];
+        newPages[index].rotation = (newPages[index].rotation + 90) % 360 as any;
+        setPages(newPages);
+    };
+
+    if (loading) {
+        return (
+            <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
+                <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-purple-500 mb-4"></div>
+                <p className="text-lg">{loadingProgress}</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex flex-col h-screen bg-gray-900 text-white">
+            <header className="bg-gray-800 shadow-md p-4 flex items-center justify-between sticky top-0 z-20">
+                <div className="flex items-center gap-4">
+                    <MergeIcon className="w-6 h-6 text-purple-400" />
+                    <div>
+                        <h1 className="font-bold text-lg">頁面排序與合併</h1>
+                        <p className="text-xs text-gray-400">拖曳頁面以調整順序，顏色框代表不同原始檔案。</p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-4">
+                    <input 
+                        type="text" 
+                        value={projectName} 
+                        onChange={(e) => setProjectName(e.target.value)}
+                        className="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm w-64"
+                        placeholder="專案名稱"
+                    />
+                    <button onClick={onCancel} className="px-4 py-2 text-gray-300 hover:text-white">取消</button>
+                    <button onClick={handleFinish} className="px-6 py-2 bg-purple-600 hover:bg-purple-500 rounded font-bold shadow-lg">完成合併</button>
+                </div>
+            </header>
+
+            <main className="flex-grow overflow-y-auto p-6">
+                {pages.length === 0 ? (
+                    <div className="text-center text-gray-500 mt-20">
+                        沒有頁面。
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                        {pages.map((page, index) => (
+                            <div 
+                                key={page.id}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, index)}
+                                onDragEnd={handleDragEnd}
+                                onDragOver={(e) => handleDragOver(e, index)}
+                                className="relative group bg-gray-800 rounded transition-transform"
+                            >
+                                {/* Color Border Container */}
+                                <div className="p-2 rounded-t border-4 border-b-0" style={{ borderColor: page.color }}>
+                                    <div className="aspect-[3/4] bg-gray-700 flex items-center justify-center overflow-hidden relative">
+                                        <img 
+                                            src={urlCache.get(page.id)} 
+                                            alt={`Page ${index + 1}`} 
+                                            className="max-w-full max-h-full object-contain"
+                                            style={{ transform: `rotate(${page.rotation}deg)` }}
+                                        />
+                                        {/* Hover Actions */}
+                                        <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                            <button onClick={() => rotatePage(index)} className="p-1.5 bg-gray-700 rounded-full hover:bg-gray-600 text-white" title="旋轉">
+                                                <RotateIcon className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => removePage(index)} className="p-1.5 bg-red-600 rounded-full hover:bg-red-500 text-white" title="刪除">
+                                                <TrashIcon className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                {/* Footer Info */}
+                                <div className="bg-gray-800 p-2 rounded-b border-4 border-t-0 text-center" style={{ borderColor: page.color }}>
+                                    <div className="flex items-center justify-center gap-1">
+                                        <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: page.color }}></span>
+                                        <span className="text-xs font-mono text-gray-300">原始: P.{page.originalPageNum}</span>
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-1">新頁碼: {index + 1}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </main>
+        </div>
+    );
 };
 
 
@@ -1197,11 +1533,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 };
 
 // --- Home Page Component ---
-const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }> = ({ onProjectSelect }) => {
+const HomePage: React.FC<{ 
+    onProjectSelect: (project: StoredProject) => void; 
+    onMergeStart: (files: File[]) => void;
+}> = ({ onProjectSelect, onMergeStart }) => {
     const [projects, setProjects] = useState<ProjectMetadata[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const photoInputRef = useRef<HTMLInputElement>(null);
     const pdfInputRef = useRef<HTMLInputElement>(null);
+    const mergeInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         const fetchMeta = async () => {
@@ -1270,6 +1610,7 @@ const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }>
                 const renderContext = {
                     canvasContext: context,
                     viewport: viewport,
+                    canvas: canvas, // Include canvas in renderContext for compatibility
                 };
                 await page.render(renderContext).promise;
 
@@ -1297,6 +1638,18 @@ const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }>
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleMergeImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+        
+        const pdfFiles = [...files].filter(f => f.type.includes('pdf'));
+        if (pdfFiles.length === 0) {
+            alert("請選擇 PDF 檔案。");
+            return;
+        }
+        onMergeStart(pdfFiles);
     };
 
     const loadProject = async (id: string) => {
@@ -1329,7 +1682,7 @@ const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }>
                 <p className="text-lg text-gray-400">建立、編輯和管理您的 PDF 檔案</p>
             </header>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto mb-12">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto mb-12">
                 <button onClick={() => photoInputRef.current?.click()} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg p-8 flex flex-col items-center justify-center transition-transform transform hover:scale-105">
                     <PlusIcon className="w-16 h-16 mb-4"/>
                     <h2 className="text-2xl font-semibold">從相片建立</h2>
@@ -1340,10 +1693,16 @@ const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }>
                     <h2 className="text-2xl font-semibold">開啟 PDF 檔案</h2>
                     <p className="text-green-200">編輯現有的 PDF 檔案</p>
                 </button>
+                 <button onClick={() => mergeInputRef.current?.click()} className="bg-purple-600 hover:bg-purple-700 text-white rounded-lg p-8 flex flex-col items-center justify-center transition-transform transform hover:scale-105">
+                    <MergeIcon className="w-16 h-16 mb-4"/>
+                    <h2 className="text-2xl font-semibold">合併 PDF 與排序</h2>
+                    <p className="text-purple-200">合併多個檔案並視覺化調整頁序</p>
+                </button>
             </div>
             
             <input type="file" multiple accept="image/*" ref={photoInputRef} onChange={handlePhotoImport} className="hidden" />
             <input type="file" accept=".pdf" ref={pdfInputRef} onChange={handlePdfImport} className="hidden" />
+            <input type="file" multiple accept=".pdf" ref={mergeInputRef} onChange={handleMergeImport} className="hidden" />
 
             <div>
                 <h2 className="text-2xl font-bold text-white mb-4 border-b border-gray-700 pb-2">我的專案</h2>
@@ -1377,6 +1736,8 @@ const HomePage: React.FC<{ onProjectSelect: (project: StoredProject) => void; }>
 // --- Main App Component (Router) ---
 const App: React.FC = () => {
   const [activeProject, setActiveProject] = useState<StoredProject | null>(null);
+  const [mergeFiles, setMergeFiles] = useState<File[] | null>(null);
+  const [sortedMergeFiles, setSortedMergeFiles] = useState<MergeFileData[] | null>(null);
 
   const handleSaveProject = async (project: StoredProject, newName?: string) => {
     const finalProject = { ...project, name: newName || project.name };
@@ -1388,11 +1749,39 @@ const App: React.FC = () => {
     setActiveProject(null);
   };
 
+  const handleMergeStart = (files: File[]) => {
+      setMergeFiles(files);
+  };
+
+  const handleMergeConfirm = (sortedFiles: MergeFileData[]) => {
+      setMergeFiles(null);
+      setSortedMergeFiles(sortedFiles);
+  };
+
+  const handleMergeCancel = () => {
+      setMergeFiles(null);
+      setSortedMergeFiles(null);
+  };
+
+  const handleMergeSave = async (project: StoredProject) => {
+      await dbService.saveProject(project);
+      setSortedMergeFiles(null);
+      setActiveProject(project);
+  };
+
+  if (mergeFiles) {
+      return <FileSortModal files={mergeFiles} onCancel={handleMergeCancel} onConfirm={handleMergeConfirm} />;
+  }
+
+  if (sortedMergeFiles) {
+      return <MergeSortPage sortedFiles={sortedMergeFiles} onSave={handleMergeSave} onCancel={handleMergeCancel} />;
+  }
+
   if (activeProject) {
     return <EditorPage project={activeProject} onSave={handleSaveProject} onClose={handleCloseEditor} />;
   }
 
-  return <HomePage onProjectSelect={setActiveProject} />;
+  return <HomePage onProjectSelect={setActiveProject} onMergeStart={handleMergeStart} />;
 };
 
 export default App;
