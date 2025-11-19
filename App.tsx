@@ -1,9 +1,6 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
-// FIX: Dexie is a default export, not a named export. This resolves the error on `this.version(1)`.
-// Fix: Import `Table` type directly from dexie and remove the unused `DexieType` alias. This resolves the error on `this.version(1)`.
 import Dexie, { type Table } from 'dexie';
 import { ProjectMetadata, StoredProject, EditorPageProps, EditorPageState, CompressionQuality, EditorObject, DrawingTool, PageData } from './types';
 
@@ -115,6 +112,12 @@ const TextIcon: React.FC<{ className?: string }> = ({ className }) => (
         <text x="12" y="17" fontSize="18" textAnchor="middle" fontFamily="Arial, sans-serif" >文</text>
     </svg>
 );
+const ImageIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+);
+
 const ResetZoomIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
     <circle cx="12" cy="12" r="9" />
@@ -129,6 +132,16 @@ const MergeIcon: React.FC<{ className?: string }> = ({ className }) => (
 const DragHandleIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+    </svg>
+);
+const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+    </svg>
+);
+const XIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
     </svg>
 );
 
@@ -443,24 +456,26 @@ const MergeSortPage: React.FC<{
 
     return (
         <div className="flex flex-col h-screen bg-gray-900 text-white">
-            <header className="bg-gray-800 shadow-md p-4 flex items-center justify-between sticky top-0 z-20">
+            <header className="bg-gray-800 shadow-md p-4 flex flex-col md:flex-row md:items-center justify-between sticky top-0 z-20 gap-4">
                 <div className="flex items-center gap-4">
-                    <MergeIcon className="w-6 h-6 text-purple-400" />
-                    <div>
-                        <h1 className="font-bold text-lg">頁面排序與合併</h1>
-                        <p className="text-xs text-gray-400">拖曳頁面以調整順序，顏色框代表不同原始檔案。</p>
+                    <MergeIcon className="w-8 h-8 md:w-6 md:h-6 text-purple-400 shrink-0" />
+                    <div className="min-w-0">
+                        <h1 className="font-bold text-lg truncate">頁面排序與合併</h1>
+                        <p className="text-xs text-gray-400 line-clamp-2 md:whitespace-normal">拖曳頁面以調整順序，顏色框代表不同原始檔案。</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full md:w-auto">
                     <input 
                         type="text" 
                         value={projectName} 
                         onChange={(e) => setProjectName(e.target.value)}
-                        className="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm w-64"
+                        className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm w-full md:w-64"
                         placeholder="專案名稱"
                     />
-                    <button onClick={onCancel} className="px-4 py-2 text-gray-300 hover:text-white">取消</button>
-                    <button onClick={handleFinish} className="px-6 py-2 bg-purple-600 hover:bg-purple-500 rounded font-bold shadow-lg">完成合併</button>
+                    <div className="flex gap-3">
+                        <button onClick={onCancel} className="flex-1 md:flex-none px-4 py-2 rounded bg-gray-700 md:bg-transparent hover:bg-gray-600 text-gray-300 hover:text-white text-sm">取消</button>
+                        <button onClick={handleFinish} className="flex-1 md:flex-none px-6 py-2 bg-purple-600 hover:bg-purple-500 rounded font-bold shadow-lg text-sm whitespace-nowrap">完成合併</button>
+                    </div>
                 </div>
             </header>
 
@@ -531,6 +546,9 @@ type ActionState = {
 };
 
 const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => {
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const objectImageInputRef = useRef<HTMLInputElement>(null);
+
     // History state for undo/redo
     const [history, setHistory] = useState<EditorPageState[]>([{ ...project, pages: project.pages.map(p => ({ ...p, rotation: p.rotation ?? 0, objects: p.objects || [] })) }]);
     const [historyIndex, setHistoryIndex] = useState(0);
@@ -539,6 +557,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [pageUrlCache, setPageUrlCache] = useState<Map<string, string>>(new Map());
     // Ref to store valid URLs to prevent reloading image on every state change (like drawing)
     const activeUrlMap = useRef(new Map<string, string>());
+    
+    // Cache for object images (the overlaid images)
+    const loadedObjectImages = useRef<Map<string, HTMLImageElement>>(new Map());
+    const [targetObjectId, setTargetObjectId] = useState<string | null>(null);
 
     const [selectedPages, setSelectedPages] = useState<Set<string>>(new Set(project.pages.length > 0 ? [project.pages[0].id] : []));
     const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -629,6 +651,38 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             activeUrlMap.current.forEach(url => URL.revokeObjectURL(url));
         };
     }, []);
+    
+    // Preload object images logic
+    useEffect(() => {
+        if (!viewedPage) return;
+        
+        const loadImages = async () => {
+            let hasNewImages = false;
+            for (const obj of viewedPage.objects) {
+                if (obj.type === 'image-placeholder' && obj.imageData && !loadedObjectImages.current.has(obj.id)) {
+                    const img = new Image();
+                    const url = URL.createObjectURL(obj.imageData);
+                    img.src = url;
+                    await new Promise((resolve, reject) => {
+                        img.onload = resolve;
+                        img.onerror = reject;
+                    }).then(() => {
+                        loadedObjectImages.current.set(obj.id, img);
+                        hasNewImages = true;
+                    }).catch(() => {
+                        console.error(`Failed to load image for object ${obj.id}`);
+                    });
+                    // We do not revoke object URL here immediately because we need it for the Image object
+                    // Ideally we should track these URLs too and revoke them later
+                }
+            }
+            if (hasNewImages) {
+                setImageLoadedCount(c => c + 1);
+            }
+        };
+        
+        loadImages();
+    }, [viewedPage]);
 
 
     const updateState = (newState: EditorPageState, options: { keepSelection?: boolean } = {}) => {
@@ -675,20 +729,49 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 const img = new Image();
                 
                 const flattenedDataUrl = await new Promise<string>((resolve, reject) => {
-                    img.onload = () => {
+                    img.onload = async () => {
                         tempCanvas.width = img.naturalWidth;
                         tempCanvas.height = img.naturalHeight;
                         tempCtx!.drawImage(img, 0, 0);
 
-                        // If imageRef is not available (headless export), we default to scale 1
-                        // Ideally we should pass the scale or recalculate it if strictly needed, 
-                        // but for flattened export the objects are relative to image size anyway.
                         const scaleX = 1; 
                         const scaleY = 1; 
 
-                        (page.objects || []).forEach(obj => {
-                            drawObject(tempCtx!, obj, { scaleX, scaleY });
-                        });
+                        // Render objects sequentially, handling async image loading for image-placeholders
+                        for (const obj of (page.objects || [])) {
+                            if (obj.type === 'image-placeholder' && obj.imageData) {
+                                try {
+                                    const objImg = new Image();
+                                    const objUrl = URL.createObjectURL(obj.imageData);
+                                    objImg.src = objUrl;
+                                    await new Promise((r, rej) => {
+                                        objImg.onload = r;
+                                        objImg.onerror = rej;
+                                    });
+                                    
+                                    // Draw the object image
+                                    const sp = { x: obj.sp.x * scaleX, y: obj.sp.y * scaleY };
+                                    const ep = { x: obj.ep.x * scaleX, y: obj.ep.y * scaleY };
+                                    const x = Math.min(sp.x, ep.x);
+                                    const y = Math.min(sp.y, ep.y);
+                                    const w = Math.abs(sp.x - ep.x);
+                                    const h = Math.abs(sp.y - ep.y);
+                                    
+                                    tempCtx!.drawImage(objImg, x, y, w, h);
+                                    
+                                    // Border
+                                    tempCtx!.strokeStyle = '#FF69B4';
+                                    tempCtx!.lineWidth = (obj.strokeWidth || 2) * scaleX;
+                                    tempCtx!.strokeRect(x, y, w, h);
+                                    
+                                    URL.revokeObjectURL(objUrl);
+                                } catch (e) {
+                                    console.error("Failed to render object image in PDF", e);
+                                }
+                            } else {
+                                drawObject(tempCtx!, obj, { scaleX, scaleY });
+                            }
+                        }
                         resolve(tempCanvas.toDataURL('image/jpeg', 0.92));
                     };
                     img.onerror = () => reject(new Error('Image failed to load for PDF generation'));
@@ -844,6 +927,111 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         }
     };
 
+    const handleAddPages = () => {
+        fileMenu.close();
+        fileInputRef.current?.click();
+    };
+    
+    const onObjectImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files;
+        if (!files || files.length === 0 || !targetObjectId || !viewedPageId) return;
+        
+        const file = files[0];
+        // Find the object and update it with the blob
+        const newPages = state.pages.map(p => {
+            if (p.id === viewedPageId) {
+                const newObjects = p.objects.map(obj => {
+                    if (obj.id === targetObjectId) {
+                        return { ...obj, imageData: file };
+                    }
+                    return obj;
+                });
+                return { ...p, objects: newObjects };
+            }
+            return p;
+        });
+
+        updateState({ ...state, pages: newPages });
+        setTargetObjectId(null);
+        event.target.value = ''; // Reset input
+    };
+
+    const onAddFilesChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+
+        setIsLoading(true);
+        try {
+            const newPages: PageData[] = [];
+            const sortedFiles = (Array.from(files) as File[]).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+            for (let i = 0; i < sortedFiles.length; i++) {
+                const file = sortedFiles[i];
+                
+                if (file.type === 'application/pdf') {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    
+                    for (let j = 1; j <= pdf.numPages; j++) {
+                        const page = await pdf.getPage(j);
+                        const viewport = page.getViewport({ scale: 1.0 });
+                        const canvas = document.createElement('canvas');
+                        const context = canvas.getContext('2d');
+                        if (!context) continue;
+
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+
+                        await page.render({
+                            canvasContext: context,
+                            viewport: viewport,
+                            canvas: canvas,
+                        }).promise;
+                        
+                        const blob = await new Promise<Blob | null>(resolve => 
+                            canvas.toBlob(resolve, 'image/jpeg', CompressionQuality.NORMAL)
+                        );
+
+                        if (blob) {
+                            newPages.push({
+                                id: `page_added_${Date.now()}_${i}_${j}`,
+                                data: blob,
+                                rotation: 0,
+                                objects: []
+                            });
+                        }
+                    }
+                } else if (file.type.startsWith('image/')) {
+                     newPages.push({
+                        id: `page_added_${Date.now()}_${i}`,
+                        data: file,
+                        rotation: 0,
+                        objects: []
+                    });
+                }
+            }
+
+            if (newPages.length > 0) {
+                const newState = {
+                    ...state,
+                    pages: [...state.pages, ...newPages]
+                };
+                updateState(newState);
+                // Switch view to first new page
+                setViewedPageId(newPages[0].id);
+                scrollToThumbnail(newPages[0].id);
+            }
+
+        } catch (error) {
+            console.error("Error adding pages:", error);
+            alert("新增頁面失敗。");
+        } finally {
+            setIsLoading(false);
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+        }
+    };
 
     const togglePageSelection = (pageId: string) => {
         setSelectedPages(prev => {
@@ -1065,6 +1253,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const getHandleAtPoint = (point: Point, object: EditorObject | null): string | null => {
         if (!object) return null;
+        
+        // Restriction: Image Placeholders with images cannot be resized
+        if (object.type === 'image-placeholder' && object.imageData) {
+            return null;
+        }
+
         const handles = getHandlesForObject(object);
         const handleSize = 8; // in pixels
         for (const [name, pos] of Object.entries(handles)) {
@@ -1154,6 +1348,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 setActionState({ type: 'resizing', startPoint, handle, initialObject: selectedObject! });
             } else {
                 const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
+                
+                // Logic for Click on Empty Image Placeholder
+                if (objectToSelect && objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) {
+                     setTargetObjectId(objectToSelect.id);
+                     objectImageInputRef.current?.click();
+                     return; // Don't drag/select if clicking to upload
+                }
+
                 if (objectToSelect) {
                     setSelectedObjectId(objectToSelect.id);
                     setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
@@ -1237,7 +1439,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 type: activeTool as DrawingTool,
                 sp: startPoint,
                 ep: endPoint,
-                color: drawingColor,
+                color: activeTool === 'image-placeholder' ? '#FF69B4' : drawingColor, // Force Hot Pink for image placeholders
                 strokeWidth: strokeWidth,
             };
             newObjects.push(newObject);
@@ -1284,6 +1486,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 }
             } else {
                 const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
+                
+                // Logic for Touch on Empty Image Placeholder
+                if (objectToSelect && objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) {
+                     setTargetObjectId(objectToSelect.id);
+                     objectImageInputRef.current?.click();
+                     return;
+                }
+
                 if (objectToSelect) {
                     setSelectedObjectId(objectToSelect.id);
                     setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
@@ -1381,8 +1591,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const sp = { x: obj.sp.x * scaleX, y: obj.sp.y * scaleY };
         const ep = { x: obj.ep.x * scaleX, y: obj.ep.y * scaleY };
         
-        ctx.strokeStyle = obj.color || 'red';
-        ctx.fillStyle = obj.color || 'red';
+        const isImagePlaceholder = obj.type === 'image-placeholder';
+        ctx.strokeStyle = isImagePlaceholder ? '#FF69B4' : (obj.color || 'red');
+        ctx.fillStyle = isImagePlaceholder ? '#FF69B4' : (obj.color || 'red');
         ctx.lineWidth = (obj.strokeWidth || 2) * scaleX;
 
         switch (obj.type) {
@@ -1419,6 +1630,35 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 break;
             case 'rect':
                 ctx.strokeRect(Math.min(sp.x, ep.x), Math.min(sp.y, ep.y), Math.abs(ep.x - sp.x), Math.abs(ep.y - sp.y));
+                break;
+            case 'image-placeholder':
+                const x = Math.min(sp.x, ep.x);
+                const y = Math.min(sp.y, ep.y);
+                const w = Math.abs(sp.x - ep.x);
+                const h = Math.abs(sp.y - ep.y);
+                
+                // Draw Box
+                ctx.strokeRect(x, y, w, h);
+
+                if (obj.imageData && loadedObjectImages.current.has(obj.id)) {
+                    // Draw Image if loaded
+                    const img = loadedObjectImages.current.get(obj.id);
+                    if (img) {
+                        ctx.drawImage(img, x, y, w, h);
+                    }
+                } else if (!obj.imageData) {
+                    // Draw Plus Sign
+                    const cx = x + w / 2;
+                    const cy = y + h / 2;
+                    const plusSize = Math.min(w, h) / 4;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(cx - plusSize, cy);
+                    ctx.lineTo(cx + plusSize, cy);
+                    ctx.moveTo(cx, cy - plusSize);
+                    ctx.lineTo(cx, cy + plusSize);
+                    ctx.stroke();
+                }
                 break;
             case 'circle':
                 ctx.beginPath();
@@ -1497,13 +1737,18 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             ctx.setLineDash([]);
             
             const handles = getHandlesForObject(currentSelectedObject);
-            ctx.fillStyle = 'white';
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 1;
-            Object.values(handles).forEach(pos => {
-                ctx.fillRect(pos.x - 4, pos.y - 4, 8, 8);
-                ctx.strokeRect(pos.x - 4, pos.y - 4, 8, 8);
-            });
+            // Don't show handles if it's an image-placeholder with data (locked)
+            const isLockedImage = currentSelectedObject.type === 'image-placeholder' && currentSelectedObject.imageData;
+            
+            if (!isLockedImage) {
+                ctx.fillStyle = 'white';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 1;
+                Object.values(handles).forEach(pos => {
+                    ctx.fillRect(pos.x - 4, pos.y - 4, 8, 8);
+                    ctx.strokeRect(pos.x - 4, pos.y - 4, 8, 8);
+                });
+            }
         }
     }, [viewedPage, selectedObjectId, selectedObject, previewObject, zoom, pan, imageLoadedCount]); // Added imageLoadedCount
 
@@ -1566,12 +1811,21 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 <FileIcon className="w-4 h-4" /> <span className="hidden md:inline">檔案</span>
                             </button>
                             {fileMenu.isOpen && (
-                                <div className="absolute left-0 mt-2 w-56 bg-gray-700 rounded-md shadow-lg py-1 z-50 border border-gray-600">
-                                    <a href="#" onClick={(e) => { e.preventDefault(); handleSaveAndDownload(); }} className="block px-4 py-2 text-sm text-white hover:bg-gray-600">儲存並下載 PDF (Ctrl+S)</a>
+                                <div className="absolute left-0 mt-2 w-44 bg-gray-700 rounded-md shadow-lg py-1 z-50 border border-gray-600">
+                                    <button onClick={handleAddPages} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-600 flex items-center gap-2">
+                                         <PlusIcon className="w-4 h-4" /> 新增頁面/圖片
+                                    </button>
+                                    <div className="border-t border-gray-600 my-1"></div>
+                                    <a href="#" onClick={(e) => { e.preventDefault(); handleSaveAndDownload(); }} className="flex items-center gap-2 px-4 py-2 text-sm text-white hover:bg-gray-600">
+                                        <DownloadIcon className="w-4 h-4" /> 儲存並下載
+                                    </a>
                                     <a href="#" onClick={(e) => { e.preventDefault(); handleShare(); }} className="flex items-center gap-2 px-4 py-2 text-sm text-white hover:bg-gray-600">
                                         <ShareIcon className="w-4 h-4" /> 儲存並分享
                                     </a>
-                                    <a href="#" onClick={(e) => { e.preventDefault(); handleClose(); }} className="block px-4 py-2 text-sm text-white hover:bg-gray-600">關閉</a>
+                                    <div className="border-t border-gray-600 my-1"></div>
+                                    <a href="#" onClick={(e) => { e.preventDefault(); handleClose(); }} className="flex items-center gap-2 px-4 py-2 text-sm text-white hover:bg-gray-600">
+                                        <XIcon className="w-4 h-4" /> 關閉
+                                    </a>
                                 </div>
                             )}
                         </div>
@@ -1582,7 +1836,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 <RotateIcon className="w-4 h-4" /> <span className="hidden md:inline">旋轉</span>
                             </button>
                                 {rotateMenu.isOpen && (
-                                <div className="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-1 z-50 border border-gray-600">
+                                <div className="absolute left-0 mt-2 w-44 bg-gray-700 rounded-md shadow-lg py-1 z-50 border border-gray-600">
                                         <button onClick={handleRotateSelectedPages} disabled={selectedPages.size === 0} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-600 disabled:opacity-50">
                                         旋轉選取 90° ({selectedPages.size})
                                     </button>
@@ -1597,7 +1851,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 <SplitIcon className="w-4 h-4" /> <span className="hidden md:inline">分割/刪除</span>
                             </button>
                             {splitMenu.isOpen && (
-                                <div className="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-1 z-50 border border-gray-600">
+                                <div className="absolute left-0 mt-2 w-44 bg-gray-700 rounded-md shadow-lg py-1 z-50 border border-gray-600">
                                     <button onClick={deletePages} disabled={selectedPages.size === 0} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-600 disabled:opacity-50">
                                         刪除選取 ({selectedPages.size})
                                     </button>
@@ -1645,11 +1899,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                             <button onClick={() => setActiveTool('rect')} title="方形" className={`p-2 rounded-full ${activeTool === 'rect' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}> <RectIcon className="w-5 h-5" /> </button>
                             <button onClick={() => setActiveTool('circle')} title="圓形" className={`p-2 rounded-full ${activeTool === 'circle' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}> <CircleIcon className="w-5 h-5" /> </button>
                             <button onClick={() => setActiveTool('text')} title="文字" className={`p-2 rounded-full ${activeTool === 'text' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}> <TextIcon className="w-5 h-5" /> </button>
+                            <button onClick={() => setActiveTool('image-placeholder')} title="疊加圖片" className={`p-2 rounded-full ${activeTool === 'image-placeholder' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}> <ImageIcon className="w-5 h-5" /> </button>
                         </div>
                         
                         {isDrawingToolActive && (
                             <div className="flex md:flex-row flex-col items-center gap-3 pt-2 md:pt-0 md:pl-3 border-t md:border-t-0 md:border-l border-gray-600 w-full md:w-auto">
-                                <input type="color" value={drawingColor} onChange={(e) => setDrawingColor(e.target.value)} className="w-8 h-8 rounded bg-transparent cursor-pointer border-none p-0" />
+                                {/* Show color picker unless it's Image Placeholder (which is fixed pink) */}
+                                {activeTool !== 'image-placeholder' && (
+                                     <input type="color" value={drawingColor} onChange={(e) => setDrawingColor(e.target.value)} className="w-8 h-8 rounded bg-transparent cursor-pointer border-none p-0" />
+                                )}
                                 
                                 {activeTool !== 'text' && (
                                      <div className="flex md:flex-row flex-col items-center gap-1">
@@ -1865,299 +2123,274 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     </main>
                 </div>
             </div>
+            <input type="file" ref={fileInputRef} multiple accept="application/pdf,image/*" className="hidden" onChange={onAddFilesChange} />
+            <input type="file" ref={objectImageInputRef} accept="image/*" className="hidden" onChange={onObjectImageChange} />
         </div>
     );
 };
 
 const App: React.FC = () => {
-    const [projects, setProjects] = useState<ProjectMetadata[]>([]);
-    const [currentProject, setCurrentProject] = useState<StoredProject | null>(null);
-    const [isMerging, setIsMerging] = useState(false);
-    const [mergeFiles, setMergeFiles] = useState<File[]>([]);
-    const [showMergeSort, setShowMergeSort] = useState(false);
-    const [sortedMergeFiles, setSortedMergeFiles] = useState<MergeFileData[]>([]);
-    const [isProcessing, setIsProcessing] = useState(false);
+  const [view, setView] = useState<'home' | 'editor' | 'merge-sort'>('home');
+  const [projects, setProjects] = useState<ProjectMetadata[]>([]);
+  const [currentProject, setCurrentProject] = useState<StoredProject | null>(null);
+  const [isAppLoading, setIsAppLoading] = useState(false);
+  
+  // Merge State
+  const [mergeFiles, setMergeFiles] = useState<File[]>([]);
+  const [sortedMergeFiles, setSortedMergeFiles] = useState<MergeFileData[]>([]);
+  const [showFileSortModal, setShowFileSortModal] = useState(false);
 
-    const loadProjects = useCallback(async () => {
-        try {
-            const projs = await dbService.getProjectsMetadata();
-            setProjects(projs);
-        } catch (error) {
-            console.error("Failed to load projects", error);
-        }
-    }, []);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const mergeInputRef = useRef<HTMLInputElement>(null);
 
-    useEffect(() => {
-        loadProjects();
-    }, [loadProjects]);
+  const loadProjects = useCallback(async () => {
+    try {
+        const metas = await dbService.getProjectsMetadata();
+        setProjects(metas);
+    } catch (error) {
+        console.error("Failed to load projects", error);
+    }
+  }, []);
 
-    const handleCreateProject = async (file: File) => {
-        setIsProcessing(true);
-        try {
-            const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            const pages: PageData[] = [];
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
 
-            for (let i = 1; i <= pdf.numPages; i++) {
-                const page = await pdf.getPage(i);
-                const viewport = page.getViewport({ scale: 1.0 }); // Thumbnail
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                if (!context) continue;
+  const handleCreateProject = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    
+    setIsAppLoading(true);
 
-                canvas.width = viewport.width;
-                canvas.height = viewport.height;
+    try {
+        const newPages: PageData[] = [];
+        const sortedFiles = (Array.from(files) as File[]).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+        for (let i = 0; i < sortedFiles.length; i++) {
+            const file = sortedFiles[i];
+            
+            if (file.type === 'application/pdf') {
+                // Basic Loading for single PDF
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                 
-                const renderContext = {
-                    canvasContext: context,
-                    viewport: viewport,
-                    canvas: canvas,
-                };
-                await page.render(renderContext).promise;
+                for (let j = 1; j <= pdf.numPages; j++) {
+                    const page = await pdf.getPage(j);
+                    const viewport = page.getViewport({ scale: 1.0 }); // Thumbnail scale
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    if (!context) continue;
 
-                const blob = await new Promise<Blob | null>(resolve => 
-                    canvas.toBlob(resolve, 'image/jpeg', CompressionQuality.NORMAL)
-                );
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    
+                    await page.render({
+                        canvasContext: context,
+                        viewport: viewport,
+                        canvas: canvas,
+                    }).promise;
+                    
+                    const blob = await new Promise<Blob | null>(resolve => 
+                        canvas.toBlob(resolve, 'image/jpeg', CompressionQuality.NORMAL)
+                    );
 
-                if (blob) {
-                    pages.push({
-                        id: `page_${Date.now()}_${i}`,
-                        data: blob,
-                        rotation: 0,
-                        objects: []
-                    });
+                    if (blob) {
+                        newPages.push({
+                            id: `page_${Date.now()}_${i}_${j}`,
+                            data: blob,
+                            rotation: 0,
+                            objects: []
+                        });
+                    }
                 }
-            }
-
-            const newProject: StoredProject = {
-                id: `proj_${Date.now()}`,
-                name: file.name.replace(/\.pdf$/i, ''),
-                pages: pages,
-                timestamp: Date.now()
-            };
-
-            await dbService.saveProject(newProject);
-            await loadProjects();
-            setCurrentProject(newProject);
-        } catch (error) {
-            console.error("Error creating project:", error);
-            alert("建立專案失敗。");
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    const handleCreateProjectFromImages = async (files: File[]) => {
-        setIsProcessing(true);
-        try {
-            const pages: PageData[] = [];
-            // Sort by name to ensure order
-            const sortedFiles = files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-
-            for (let i = 0; i < sortedFiles.length; i++) {
-                const file = sortedFiles[i];
-                // Ensure it's an image
-                if (!file.type.startsWith('image/')) continue;
-
-                pages.push({
+            } else if (file.type.startsWith('image/')) {
+                 newPages.push({
                     id: `page_${Date.now()}_${i}`,
                     data: file,
                     rotation: 0,
                     objects: []
                 });
             }
-
-            if (pages.length === 0) {
-                alert("請選擇有效的圖片檔案。");
-                return;
-            }
-
-            const newProject: StoredProject = {
-                id: `proj_img_${Date.now()}`,
-                name: files.length === 1 ? files[0].name.split('.')[0] : `圖片專案 ${new Date().toLocaleDateString()}`,
-                pages: pages,
-                timestamp: Date.now()
-            };
-
-            await dbService.saveProject(newProject);
-            await loadProjects();
-            setCurrentProject(newProject);
-
-        } catch (error) {
-            console.error("Error creating project from images:", error);
-            alert("建立專案失敗。");
-        } finally {
-            setIsProcessing(false);
         }
-    };
-    
-    const handleOpenProject = async (id: string) => {
-        const project = await dbService.getProjectData(id);
-        if (project) {
-            setCurrentProject(project);
-        }
-    };
-    
-    const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (confirm('您確定要刪除此專案嗎？')) {
-            await dbService.deleteProject(id);
-            await loadProjects();
-        }
-    };
 
-    const handleSaveProject = async (project: StoredProject, newName?: string) => {
-        const updatedProject = { ...project, timestamp: Date.now() };
-        if (newName) {
-            updatedProject.name = newName;
+        if (newPages.length === 0) {
+            throw new Error("No valid pages created");
         }
-        await dbService.saveProject(updatedProject);
-        await loadProjects();
-        
-        // Update current project state if it's the one being edited
-        if (currentProject && currentProject.id === project.id) {
-             setCurrentProject(updatedProject);
-        } else if (!currentProject) {
-            // If we just saved a new merged project
-             setCurrentProject(updatedProject);
-        }
-    };
 
-    const onFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = event.target.files;
-        if (files && files.length > 0) {
-            // If one file and it's a PDF, treat as standard PDF project
-            if (files.length === 1 && files[0].type === 'application/pdf') {
-                await handleCreateProject(files[0]);
-            } else {
-                // Otherwise, treat as image project (multiple or single image)
-                await handleCreateProjectFromImages(Array.from(files));
-            }
-        }
-        event.target.value = '';
-    };
+        const newProject: StoredProject = {
+            id: `proj_${Date.now()}`,
+            name: sortedFiles.length === 1 ? sortedFiles[0].name : `新專案-${new Date().toLocaleDateString()}`,
+            pages: newPages,
+            timestamp: Date.now()
+        };
 
-    const onMergeFilesChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-         if (event.target.files && event.target.files.length > 0) {
-            setMergeFiles(Array.from(event.target.files));
-            setIsMerging(true);
-            setShowMergeSort(false);
-        }
-        event.target.value = '';
-    };
-
-    const handleMergeConfirm = (sorted: MergeFileData[]) => {
-        setSortedMergeFiles(sorted);
-        setShowMergeSort(true);
-        setIsMerging(false); // Close modal
-    };
-
-    if (currentProject) {
-        return (
-            <EditorPage 
-                project={currentProject} 
-                onSave={handleSaveProject} 
-                onClose={() => {
-                    setCurrentProject(null);
-                    loadProjects(); // Refresh list when closing
-                }} 
-            />
-        );
+        await dbService.saveProject(newProject);
+        setCurrentProject(newProject);
+        setView('editor');
+        loadProjects();
+    } catch (e) {
+        console.error("Error creating project:", e);
+        alert("無法開啟檔案 (可能格式不支援或已損壞)");
+    } finally {
+        setIsAppLoading(false);
+        if(fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
 
-    if (showMergeSort) {
-        return (
-            <MergeSortPage
-                sortedFiles={sortedMergeFiles}
-                onSave={async (project) => {
-                    await handleSaveProject(project);
-                    setShowMergeSort(false);
-                    setCurrentProject(project);
-                }}
-                onCancel={() => setShowMergeSort(false)}
-            />
-        );
+  const handleMergeSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+        setMergeFiles(Array.from(files));
+        setShowFileSortModal(true);
     }
+    if(mergeInputRef.current) mergeInputRef.current.value = '';
+  };
 
-    return (
-        <div className="min-h-screen bg-gray-900 text-white p-8">
-            {isProcessing && (
-                <div className="fixed inset-0 bg-black bg-opacity-70 flex flex-col items-center justify-center z-50">
-                    <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
-                    <p className="text-white mt-4">處理中，請稍候...</p>
+  const handleMergeConfirm = (sortedFiles: MergeFileData[]) => {
+    setSortedMergeFiles(sortedFiles);
+    setShowFileSortModal(false);
+    setView('merge-sort');
+  };
+
+  const handleMergeSave = async (project: StoredProject) => {
+    await dbService.saveProject(project);
+    setCurrentProject(project);
+    setView('editor');
+    loadProjects();
+  };
+
+  const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm("確定要刪除此專案嗎？此動作無法復原。")) {
+        await dbService.deleteProject(id);
+        loadProjects();
+    }
+  };
+
+  const handleOpenProject = async (id: string) => {
+    const project = await dbService.getProjectData(id);
+    if (project) {
+        setCurrentProject(project);
+        setView('editor');
+    } else {
+        alert("找不到專案資料");
+    }
+  };
+
+  const handleHome = () => {
+      setView('home');
+      setCurrentProject(null);
+      loadProjects();
+  };
+
+  return (
+    <>
+      {isAppLoading && (
+            <div className="fixed inset-0 bg-black bg-opacity-70 flex flex-col items-center justify-center z-50">
+                <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
+                <p className="text-white mt-4">正在建立專案，請稍候...</p>
+            </div>
+      )}
+
+      {view === 'home' && (
+        <div className="min-h-screen bg-gray-900 text-white p-6">
+            {/* Header */}
+            <header className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/30">
+                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    </div>
+                    <h1 className="text-2xl font-bold tracking-tight">PDF 編輯工具</h1>
                 </div>
-            )}
+                <div className="flex gap-3 w-full md:w-auto">
+                     <button 
+                        onClick={() => mergeInputRef.current?.click()}
+                        className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-all text-sm font-medium"
+                    >
+                        <MergeIcon className="w-5 h-5 text-purple-400" />
+                        <span>合併 PDF</span>
+                    </button>
+                    <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-lg shadow-lg shadow-blue-600/20 transition-all text-sm font-medium"
+                    >
+                        <PlusIcon className="w-5 h-5" />
+                        <span>新專案</span>
+                    </button>
+                </div>
+            </header>
 
-            {isMerging && (
+            {/* Projects Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {projects.map((project) => (
+                    <div 
+                        key={project.id} 
+                        onClick={() => handleOpenProject(project.id)}
+                        className="group bg-gray-800 rounded-xl border border-gray-700 p-5 hover:border-blue-500/50 hover:bg-gray-750 transition-all cursor-pointer relative hover:shadow-xl hover:shadow-black/20"
+                    >
+                        <div className="flex items-start justify-between mb-4">
+                            <div className="p-3 bg-gray-700/50 rounded-lg group-hover:bg-blue-500/10 group-hover:text-blue-400 transition-colors">
+                                <FileIcon className="w-6 h-6" />
+                            </div>
+                            <button 
+                                onClick={(e) => handleDeleteProject(project.id, e)}
+                                className="p-2 text-gray-500 hover:text-red-400 hover:bg-gray-700 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                title="刪除專案"
+                            >
+                                <TrashIcon className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <h3 className="font-bold text-lg mb-1 truncate pr-2">{project.name}</h3>
+                        <div className="flex items-center justify-between text-sm text-gray-400">
+                             <span>{new Date(project.timestamp).toLocaleDateString()}</span>
+                             <span className="px-2 py-0.5 bg-gray-700 rounded text-xs">{project.pageCount} 頁</span>
+                        </div>
+                    </div>
+                ))}
+                
+                {projects.length === 0 && (
+                    <div className="col-span-full flex flex-col items-center justify-center py-20 text-gray-500 border-2 border-dashed border-gray-800 rounded-xl bg-gray-800/30">
+                        <FolderOpenIcon className="w-16 h-16 mb-4 opacity-50" />
+                        <p className="text-lg">尚無專案</p>
+                        <p className="text-sm mt-2">點擊右上角「新專案」開始編輯 PDF</p>
+                    </div>
+                )}
+            </div>
+
+            <input type="file" ref={fileInputRef} multiple accept="application/pdf,image/*" className="hidden" onChange={handleCreateProject} />
+            <input type="file" ref={mergeInputRef} multiple accept="application/pdf" className="hidden" onChange={handleMergeSelect} />
+            
+            {showFileSortModal && (
                 <FileSortModal 
                     files={mergeFiles} 
-                    onCancel={() => setIsMerging(false)} 
+                    onCancel={() => setShowFileSortModal(false)} 
                     onConfirm={handleMergeConfirm} 
                 />
             )}
-            
-            <div className="max-w-5xl mx-auto">
-                <header className="flex flex-col md:flex-row items-center justify-between mb-10 border-b border-gray-700 pb-6 gap-4">
-                    <div>
-                        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-                            PDF 編輯與合併工具
-                        </h1>
-                        <p className="text-gray-400 mt-1">在瀏覽器中直接管理、編輯與合併您的 PDF 文件，安全無虞。</p>
-                    </div>
-                    <div className="flex gap-4">
-                        <label className="cursor-pointer bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded flex items-center gap-2 transition-colors">
-                            <input type="file" accept="application/pdf" multiple onChange={onMergeFilesChange} className="hidden" />
-                            <MergeIcon className="w-5 h-5" />
-                            合併 PDF
-                        </label>
-                         <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded flex items-center gap-2 transition-colors shadow-lg shadow-blue-900/50">
-                            <input type="file" accept="application/pdf, image/png, image/jpeg, image/jpg" multiple onChange={onFileChange} className="hidden" />
-                            <PlusIcon className="w-5 h-5" />
-                            新增專案
-                        </label>
-                    </div>
-                </header>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {projects.map(project => (
-                        <div 
-                            key={project.id} 
-                            onClick={() => handleOpenProject(project.id)}
-                            className="bg-gray-800 rounded-xl p-5 border border-gray-700 hover:border-blue-500 cursor-pointer transition-all hover:shadow-xl hover:shadow-blue-900/20 group relative"
-                        >
-                            <div className="flex items-start justify-between mb-4">
-                                <div className="p-3 bg-gray-700 rounded-lg group-hover:bg-blue-900/30 group-hover:text-blue-400 transition-colors">
-                                    <FileIcon className="w-8 h-8" />
-                                </div>
-                                <button 
-                                    onClick={(e) => handleDeleteProject(project.id, e)}
-                                    className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded-full transition-colors opacity-0 group-hover:opacity-100"
-                                    title="刪除專案"
-                                >
-                                    <TrashIcon className="w-5 h-5" />
-                                </button>
-                            </div>
-                            <h3 className="font-bold text-lg truncate mb-1" title={project.name}>{project.name}</h3>
-                            <div className="flex items-center justify-between text-sm text-gray-400">
-                                <span>{project.pageCount} 頁</span>
-                                <span>{new Date(project.timestamp).toLocaleDateString()}</span>
-                            </div>
-                        </div>
-                    ))}
-                    
-                    {projects.length === 0 && (
-                        <div className="col-span-full text-center py-20 text-gray-500 border-2 border-dashed border-gray-700 rounded-xl">
-                            <div className="mb-4 mx-auto w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center">
-                                <FolderOpenIcon className="w-8 h-8 text-gray-600" />
-                            </div>
-                            <h3 className="text-xl font-semibold text-gray-400">尚未建立專案</h3>
-                            <p className="max-w-md mx-auto mt-2">上傳 PDF 開始編輯，或選取多個 PDF 進行合併。</p>
-                        </div>
-                    )}
-                </div>
-            </div>
         </div>
-    );
+      )}
+
+      {view === 'editor' && currentProject && (
+        <EditorPage 
+            project={currentProject} 
+            onSave={async (proj, newName) => {
+                if(newName) proj.name = newName;
+                await dbService.saveProject(proj);
+                loadProjects();
+            }}
+            onClose={handleHome}
+        />
+      )}
+
+      {view === 'merge-sort' && (
+        <MergeSortPage 
+            sortedFiles={sortedMergeFiles} 
+            onSave={handleMergeSave} 
+            onCancel={() => setView('home')} 
+        />
+      )}
+    </>
+  );
 };
 
 export default App;

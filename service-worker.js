@@ -1,7 +1,10 @@
 const CACHE_NAME = 'pdf-editor-v1';
 const ASSETS_TO_CACHE = [
-  './',
-  './index.html',
+  '/',
+  '/index.html',
+  '/index.tsx',
+  '/App.tsx',
+  '/types.ts',
   'https://cdn.tailwindcss.com'
 ];
 

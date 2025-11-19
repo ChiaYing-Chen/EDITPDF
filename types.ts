@@ -6,7 +6,7 @@ export interface ProjectMetadata {
   pageCount: number;
 }
 
-export type DrawingTool = 'line' | 'arrow' | 'rect' | 'circle' | 'text';
+export type DrawingTool = 'line' | 'arrow' | 'rect' | 'circle' | 'text' | 'image-placeholder';
 
 export interface EditorObject {
   id: string;
@@ -19,6 +19,7 @@ export interface EditorObject {
   strokeWidth?: number;
   fontFamily?: string;
   fontSize?: number;
+  imageData?: Blob; // For image-placeholder
 }
 
 export interface PageData {
