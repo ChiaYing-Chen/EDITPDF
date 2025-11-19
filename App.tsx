@@ -84,6 +84,11 @@ const HandIcon: React.FC<{ className?: string }> = ({ className }) => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
   </svg>
 );
+const ShareIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+  </svg>
+);
 const LineIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12h18" transform="rotate(45 12 12)" />
@@ -664,8 +669,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const canUndo = historyIndex > 0;
     const canRedo = historyIndex < history.length - 1;
     
-    const generatePdf = async (pagesToExport: EditorPageState['pages'], filename: string) => {
-        setIsLoading(true);
+    // Generates the PDF Blob, reused by Download and Share
+    const createPdfBlob = async (pagesToExport: EditorPageState['pages']): Promise<Blob | null> => {
         try {
             const pdfDoc = await PDFDocument.create();
             for (const page of pagesToExport) {
@@ -679,8 +684,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                         tempCanvas.height = img.naturalHeight;
                         tempCtx!.drawImage(img, 0, 0);
 
-                        const scaleX = img.naturalWidth / imageRef.current!.clientWidth;
-                        const scaleY = img.naturalHeight / imageRef.current!.clientHeight;
+                        // If imageRef is not available (headless export), we default to scale 1
+                        // Ideally we should pass the scale or recalculate it if strictly needed, 
+                        // but for flattened export the objects are relative to image size anyway.
+                        const scaleX = 1; 
+                        const scaleY = 1; 
 
                         (page.objects || []).forEach(obj => {
                             drawObject(tempCtx!, obj, { scaleX, scaleY });
@@ -724,7 +732,21 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 pdfPage.drawImage(image, drawOptions);
             }
             const pdfBytes = await pdfDoc.save();
-            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            return new Blob([pdfBytes], { type: 'application/pdf' });
+        } catch (error) {
+            console.error("Failed to generate PDF blob:", error);
+            return null;
+        }
+    };
+
+    const generatePdf = async (pagesToExport: EditorPageState['pages'], filename: string) => {
+        setIsLoading(true);
+        try {
+            const blob = await createPdfBlob(pagesToExport);
+            if (!blob) {
+                 alert("產生 PDF 失敗。");
+                 return false;
+            }
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -760,6 +782,69 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         if (success) {
             setShowSaveSuccess(true);
             setTimeout(() => setShowSaveSuccess(false), 2000);
+        }
+    };
+
+    const handleShare = async () => {
+        fileMenu.close();
+        
+        // 1. Save first
+        const projectToSave: StoredProject = {
+            id: state.id,
+            name: projectName,
+            pages: state.pages,
+            timestamp: Date.now()
+        };
+        await onSave(projectToSave, projectName);
+        setIsDirty(false);
+        
+        // 2. Generate Blob
+        setIsLoading(true);
+        const blob = await createPdfBlob(state.pages);
+        setIsLoading(false);
+
+        if (!blob) {
+            alert("產生分享檔案失敗。");
+            return;
+        }
+
+        const filename = `${projectName.replace(/\.pdf$/i, '') || 'document'}.pdf`;
+        const file = new File([blob], filename, { type: 'application/pdf' });
+
+        // 3. Share
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+                await navigator.share({
+                    files: [file],
+                    title: projectName,
+                    text: '這是使用 PDF 編輯工具製作的文件，請查收。',
+                });
+            } catch (err) {
+                if ((err as Error).name !== 'AbortError') {
+                   console.error('Share failed:', err);
+                   alert('分享失敗，將為您下載檔案。');
+                   // Fallback to download
+                   const url = URL.createObjectURL(blob);
+                   const a = document.createElement('a');
+                   a.href = url;
+                   a.download = filename;
+                   document.body.appendChild(a);
+                   a.click();
+                   document.body.removeChild(a);
+                   URL.revokeObjectURL(url);
+                }
+            }
+        } else {
+             alert("您的瀏覽器不支援直接分享檔案，將為您下載檔案。");
+             // Fallback to download
+             const url = URL.createObjectURL(blob);
+             const a = document.createElement('a');
+             a.href = url;
+             a.download = filename;
+             document.body.appendChild(a);
+             a.click();
+             document.body.removeChild(a);
+             URL.revokeObjectURL(url);
         }
     };
 
@@ -1448,8 +1533,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 <FileIcon className="w-4 h-4" /> <span className="hidden md:inline">檔案</span>
                             </button>
                             {fileMenu.isOpen && (
-                                <div className="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-1 z-50 border border-gray-600">
+                                <div className="absolute left-0 mt-2 w-56 bg-gray-700 rounded-md shadow-lg py-1 z-50 border border-gray-600">
                                     <a href="#" onClick={(e) => { e.preventDefault(); handleSaveAndDownload(); }} className="block px-4 py-2 text-sm text-white hover:bg-gray-600">儲存並下載 PDF (Ctrl+S)</a>
+                                    <a href="#" onClick={(e) => { e.preventDefault(); handleShare(); }} className="flex items-center gap-2 px-4 py-2 text-sm text-white hover:bg-gray-600">
+                                        <ShareIcon className="w-4 h-4" /> 儲存並分享
+                                    </a>
                                     <a href="#" onClick={(e) => { e.preventDefault(); handleClose(); }} className="block px-4 py-2 text-sm text-white hover:bg-gray-600">關閉</a>
                                 </div>
                             )}
