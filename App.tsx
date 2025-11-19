@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -8,7 +7,7 @@ import Dexie, { type Table } from 'dexie';
 import { ProjectMetadata, StoredProject, EditorPageProps, EditorPageState, CompressionQuality, EditorObject, DrawingTool, PageData } from './types';
 
 // Configure the PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://esm.sh/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
 
 
 // --- Icons ---
@@ -76,8 +75,14 @@ const SplitIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 const PointerIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 2 L12 22 M2 12 L22 12 M9 5 L12 2 L15 5 M9 19 L12 22 L15 19 M5 9 L2 12 L5 15 M19 9 L22 12 L19 15" />
+        <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+        <path d="M13 13l6 6" />
     </svg>
+);
+const HandIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+  </svg>
 );
 const LineIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -86,7 +91,7 @@ const LineIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 const ArrowIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 12l-7-7m7 7l-7 7m7-7H5" />
     </svg>
 );
 const RectIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -118,6 +123,11 @@ const MergeIcon: React.FC<{ className?: string }> = ({ className }) => (
 const DragHandleIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+    </svg>
+);
+const MenuIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
     </svg>
 );
 
@@ -403,7 +413,8 @@ const MergeSortPage: React.FC<{
         const newProject: StoredProject = {
             id: `proj_merge_${Date.now()}`,
             name: projectName,
-            pages: projectPages
+            pages: projectPages,
+            timestamp: Date.now()
         };
         onSave(newProject);
     };
@@ -525,6 +536,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const state = history[historyIndex]; // Derived state
 
     const [pageUrlCache, setPageUrlCache] = useState<Map<string, string>>(new Map());
+    // Ref to store valid URLs to prevent reloading image on every state change (like drawing)
+    const activeUrlMap = useRef(new Map<string, string>());
 
     const [selectedPages, setSelectedPages] = useState<Set<string>>(new Set(project.pages.length > 0 ? [project.pages[0].id] : []));
     const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -536,6 +549,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [viewedPageId, setViewedPageId] = useState<string | null>(state.pages[0]?.id || null);
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
+    
+    // Mobile state
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     // Drawing state
     const [activeTool, setActiveTool] = useState<EditorTool>('move');
@@ -543,6 +559,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [previewObject, setPreviewObject] = useState<EditorObject | null>(null);
     const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
     const [textInput, setTextInput] = useState({ show: false, x: 0, y: 0, value: '' });
+    // Force render triggering when image loads
+    const [imageLoadedCount, setImageLoadedCount] = useState(0);
 
     // Drawing Style State
     const [drawingColor, setDrawingColor] = useState('#FF0000');
@@ -567,21 +585,50 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const selectedObject = viewedPage?.objects.find(o => o.id === selectedObjectId) || null;
     const isDrawingToolActive = activeTool && activeTool !== 'move';
 
+    // Optimized URL Cache Logic: Only regenerate URLs if the page ID is new
     useEffect(() => {
-        const urls = new Map<string, string>();
-        for (const page of state.pages) {
-            if (page.data instanceof Blob) {
-                urls.set(page.id, URL.createObjectURL(page.data));
-            }
-        }
-        setPageUrlCache(urls);
+        const currentMap = activeUrlMap.current;
+        const newMap = new Map<string, string>();
+        let hasChanges = false;
 
-        return () => {
-            for (const url of urls.values()) {
-                URL.revokeObjectURL(url);
+        state.pages.forEach(page => {
+            if (currentMap.has(page.id)) {
+                // Reuse existing URL
+                newMap.set(page.id, currentMap.get(page.id)!);
+            } else if (page.data instanceof Blob) {
+                // Generate new URL
+                const url = URL.createObjectURL(page.data);
+                newMap.set(page.id, url);
+                hasChanges = true;
             }
+        });
+
+        // Check for deleted pages (removed IDs)
+        if (currentMap.size !== newMap.size) hasChanges = true;
+
+        // Revoke URLs for pages that no longer exist
+        currentMap.forEach((url, id) => {
+            if (!newMap.has(id)) {
+                URL.revokeObjectURL(url);
+                hasChanges = true;
+            }
+        });
+
+        activeUrlMap.current = newMap;
+        
+        // Only update state (triggering re-render of images) if map actually changed
+        if (hasChanges) {
+             setPageUrlCache(new Map(newMap));
+        }
+    }, [state.pages]);
+
+    // Cleanup all URLs on unmount
+    useEffect(() => {
+        return () => {
+            activeUrlMap.current.forEach(url => URL.revokeObjectURL(url));
         };
-    }, [state]);
+    }, []);
+
 
     const updateState = (newState: EditorPageState, options: { keepSelection?: boolean } = {}) => {
         const newHistory = history.slice(0, historyIndex + 1);
@@ -703,6 +750,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             id: state.id,
             name: projectName,
             pages: state.pages,
+            timestamp: Date.now()
         };
         await onSave(projectToSave, projectName);
         setIsDirty(false);
@@ -732,6 +780,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         if (selectionMode === 'view') {
             setViewedPageId(pageId);
             setSelectedPages(new Set([pageId]));
+            // Close sidebar on mobile after selection
+            if (window.innerWidth < 768) {
+                setIsSidebarOpen(false);
+            }
         } else { // 'select' mode
             togglePageSelection(pageId);
         }
@@ -812,6 +864,32 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
       setPan({x: 0, y: 0});
     };
     
+    // Use ref to avoid stale closures in keydown listener
+    const handlersRef = useRef({ handleSaveAndDownload, handleUndo, canUndo });
+    // Update ref on every render
+    handlersRef.current = { handleSaveAndDownload, handleUndo, canUndo };
+
+    // Keyboard Shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Check for Ctrl+S or Command+S
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                handlersRef.current.handleSaveAndDownload();
+            }
+            // Check for Ctrl+Z or Command+Z
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                e.preventDefault();
+                if (handlersRef.current.canUndo) {
+                    handlersRef.current.handleUndo();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []); // Empty dependency array as we use ref
+
     // --- Interaction Handlers ---
     const handleSidebarWheel = useCallback((e: React.WheelEvent) => {
         e.stopPropagation(); // Prevent main view from zooming
@@ -830,6 +908,18 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     }, [state.pages, viewedPageId]);
 
     const handleMainViewWheel = (e: React.WheelEvent) => {
+        // Prevent default scrolling of the page when inside the canvas area
+        if (e.ctrlKey) {
+             e.preventDefault();
+        }
+
+        // LOCK: If drawing tool is active, disable zoom entirely
+        if (isDrawingToolActive) {
+            // Explicitly prevent default to stop browser scroll as well, effectively "locking" the view
+            e.preventDefault();
+            return; 
+        }
+        
         e.preventDefault();
         const scaleAmount = e.deltaY * -0.001;
         setZoom(z => Math.max(0.2, Math.min(z + scaleAmount, 5)));
@@ -921,6 +1011,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     };
 
     const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        e.preventDefault(); // FIX: Prevent default browser behavior (like selection/drag)
         if (textInput.show) {
             textInputRef.current?.blur();
             return;
@@ -1018,6 +1109,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const endPoint = getCanvasCoordinates(e);
         const { type, startPoint } = actionState;
         let newObjects = [...(viewedPage?.objects || [])];
+        let changesMade = false;
 
         if (type === 'drawing' && startPoint && (startPoint.x !== endPoint.x || startPoint.y !== endPoint.y)) {
             const newObject: EditorObject = {
@@ -1029,11 +1121,13 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 strokeWidth: strokeWidth,
             };
             newObjects.push(newObject);
+            changesMade = true;
         } else if ((type === 'moving' || type === 'resizing') && previewObject) {
             newObjects = newObjects.map(obj => obj.id === previewObject.id ? previewObject : obj);
+            changesMade = true;
         }
 
-        if (type !== 'idle') {
+        if (changesMade) {
             const newState = {
                 ...state,
                 pages: state.pages.map(p => p.id === viewedPageId ? { ...p, objects: newObjects } : p)
@@ -1047,6 +1141,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const handleCanvasTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
         if (e.touches.length === 2) {
+            // LOCK: Disable pinch zoom when drawing
+            if (isDrawingToolActive) {
+                e.preventDefault();
+                return;
+            }
             e.preventDefault();
             const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             pinchState.current = { isPinching: true, initialDist: dist, initialZoom: zoom };
@@ -1076,6 +1175,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     
     const handleCanvasTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
         if (pinchState.current.isPinching && e.touches.length === 2) {
+            if (isDrawingToolActive) return;
             e.preventDefault();
             const newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             const scale = (newDist / pinchState.current.initialDist) * pinchState.current.initialZoom;
@@ -1168,18 +1268,25 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 ctx.stroke();
                 break;
             case 'arrow':
-                const headlen = 15 * scaleX;
+                // Calculate arrowhead size based on stroke width so it looks proportional
+                const headlen = Math.max(15, (obj.strokeWidth || 2) * 3) * scaleX;
                 const angle = Math.atan2(ep.y - sp.y, ep.x - sp.x);
                 
-                // Main line
+                // Calculate the point where the arrow base intersects the line
+                // cos(30 deg) = 0.866. This is the projection of the side length onto the axis.
+                const arrowBaseX = ep.x - headlen * Math.cos(Math.PI / 6) * Math.cos(angle);
+                const arrowBaseY = ep.y - headlen * Math.cos(Math.PI / 6) * Math.sin(angle);
+
+                // Main line - Stop at the base of the arrow
                 ctx.beginPath();
                 ctx.moveTo(sp.x, sp.y);
-                ctx.lineTo(ep.x, ep.y);
+                ctx.lineTo(arrowBaseX, arrowBaseY); 
                 ctx.stroke();
 
                 // Arrowhead (filled triangle)
                 ctx.beginPath();
                 ctx.moveTo(ep.x, ep.y);
+                // Sides
                 ctx.lineTo(ep.x - headlen * Math.cos(angle - Math.PI / 6), ep.y - headlen * Math.sin(angle - Math.PI / 6));
                 ctx.lineTo(ep.x - headlen * Math.cos(angle + Math.PI / 6), ep.y - headlen * Math.sin(angle + Math.PI / 6));
                 ctx.closePath();
@@ -1273,7 +1380,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 ctx.strokeRect(pos.x - 4, pos.y - 4, 8, 8);
             });
         }
-    }, [viewedPage, selectedObjectId, selectedObject, previewObject, zoom, pan]);
+    }, [viewedPage, selectedObjectId, selectedObject, previewObject, zoom, pan, imageLoadedCount]); // Added imageLoadedCount
 
     // Update cursor based on action
     useEffect(() => {
@@ -1293,165 +1400,230 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     }, [activeTool, actionState.type, isDrawingToolActive]);
     
     return (
-        <div className="flex flex-col h-screen">
+        <div className="flex flex-col h-screen bg-gray-900">
              {isLoading && (
                 <div className="absolute inset-0 bg-black bg-opacity-70 flex flex-col items-center justify-center z-50">
                     <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
                     <p className="text-white mt-4">處理中，請稍候...</p>
                 </div>
             )}
-            <header className="bg-gray-800 shadow-md flex items-center sticky top-0 z-20 h-20 px-3">
-                <div className="w-1/6 flex-shrink-0">
-                    <span className="text-white text-sm font-bold px-2 py-1 truncate">{projectName}</span>
-                </div>
+            
+            {/* Header & Toolbar */}
+            <header className="bg-gray-800 shadow-md z-40 relative flex flex-col">
+                {/* Top Row: Meta Controls */}
+                <div className="relative flex items-center h-14 px-3 border-b border-gray-700">
+                    {/* Left Section */}
+                    <div className="flex-1 flex items-center gap-2 overflow-hidden">
+                         {/* Mobile Sidebar Toggle */}
+                        <button 
+                            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                            className="md:hidden p-1.5 text-gray-300 hover:text-white hover:bg-gray-700 rounded mr-1 shrink-0"
+                        >
+                            <MenuIcon className="w-6 h-6" />
+                        </button>
+                        
+                        {/* Page Info & Select Mode - Desktop Only */}
+                        <div className="hidden md:flex items-center gap-2 md:gap-4 shrink-0">
+                            <h2 className="text-xs md:text-sm font-semibold tabular-nums whitespace-nowrap">
+                                {selectionMode === 'view'
+                                    ? `頁面 (${viewedPageIndex > -1 ? viewedPageIndex + 1 : 0}/${state.pages.length})`
+                                    : `已選取 ${selectedPages.size}`
+                                }
+                            </h2>
+                            <button 
+                                onClick={() => setSelectionMode(m => m === 'view' ? 'select' : 'view')} 
+                                className={`p-2 md:p-2.5 rounded hover:bg-gray-700 ${selectionMode === 'select' ? 'text-blue-400' : 'text-gray-400'}`}
+                                title={selectionMode === 'view' ? '切換至多選模式' : '切換至檢視模式'}
+                            >
+                                {selectionMode === 'view' ? <CheckSquareIcon className="w-5 h-5 md:w-6 md:h-6" /> : <EyeIcon className="w-5 h-5 md:w-6 md:h-6" />}
+                            </button>
+                        </div>
+                    </div>
 
-                <div className="flex-grow flex items-center">
-                    {/* Toolbar */}
-                    <div className="flex items-center gap-2 text-sm bg-gray-900 px-3 h-12 rounded-full">
-                         {/* Undo/Redo */}
-                        <button onClick={handleUndo} disabled={!canUndo} className="p-1.5 hover:bg-gray-700 rounded-full disabled:opacity-50 disabled:cursor-not-allowed" title="上一步">
-                            <UndoIcon className="w-4 h-4" />
-                        </button>
-                        <button onClick={handleRedo} disabled={!canRedo} className="p-1.5 hover:bg-gray-700 rounded-full disabled:opacity-50 disabled:cursor-not-allowed" title="下一步">
-                            <RedoIcon className="w-4 h-4" />
-                        </button>
-                        <div className="h-4 border-l border-gray-600 mx-1"></div>
-                         {/* File Menu */}
+                    {/* Center Section */}
+                    <div className="flex items-center justify-center gap-2">
+                        {/* Menus */}
                         <div className="relative" ref={fileMenu.ref}>
-                            <button onClick={fileMenu.toggle} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-700 rounded-full" aria-haspopup="true" aria-expanded={fileMenu.isOpen}>
-                                <FileIcon className="w-4 h-4" /> 檔案
+                            <button onClick={fileMenu.toggle} className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm text-white transition-colors" aria-haspopup="true" aria-expanded={fileMenu.isOpen}>
+                                <FileIcon className="w-4 h-4" /> <span className="hidden md:inline">檔案</span>
                             </button>
                             {fileMenu.isOpen && (
-                                <div className="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-1 z-30">
-                                    <a href="#" onClick={(e) => { e.preventDefault(); handleSaveAndDownload(); }} className="block px-4 py-2 text-sm text-white hover:bg-gray-600">儲存並下載 PDF</a>
+                                <div className="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-1 z-50 border border-gray-600">
+                                    <a href="#" onClick={(e) => { e.preventDefault(); handleSaveAndDownload(); }} className="block px-4 py-2 text-sm text-white hover:bg-gray-600">儲存並下載 PDF (Ctrl+S)</a>
                                     <a href="#" onClick={(e) => { e.preventDefault(); handleClose(); }} className="block px-4 py-2 text-sm text-white hover:bg-gray-600">關閉</a>
                                 </div>
                             )}
                         </div>
+
                         {/* Rotate Menu */}
                         <div className="relative" ref={rotateMenu.ref}>
-                            <button onClick={rotateMenu.toggle} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-700 rounded-full" aria-haspopup="true" aria-expanded={rotateMenu.isOpen}>
-                                <RotateIcon className="w-4 h-4" /> 旋轉
+                            <button onClick={rotateMenu.toggle} className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm text-white transition-colors" title="旋轉">
+                                <RotateIcon className="w-4 h-4" /> <span className="hidden md:inline">旋轉</span>
                             </button>
-                             {rotateMenu.isOpen && (
-                                <div className="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-1 z-30">
-                                     <button
-                                        onClick={handleRotateSelectedPages}
-                                        disabled={selectedPages.size === 0}
-                                        className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
+                                {rotateMenu.isOpen && (
+                                <div className="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-1 z-50 border border-gray-600">
+                                        <button onClick={handleRotateSelectedPages} disabled={selectedPages.size === 0} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-600 disabled:opacity-50">
                                         旋轉選取 90° ({selectedPages.size})
                                     </button>
                                     <a href="#" onClick={(e) => { e.preventDefault(); handleRotateAllPages(); }} className="block px-4 py-2 text-sm text-white hover:bg-gray-600">全部旋轉 90°</a>
                                 </div>
                             )}
                         </div>
-                        {/* Split Menu */}
+
+                        {/* Split/Delete Menu */}
                         <div className="relative" ref={splitMenu.ref}>
-                            <button onClick={splitMenu.toggle} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-700 rounded-full" aria-haspopup="true" aria-expanded={splitMenu.isOpen}>
-                                <SplitIcon className="w-4 h-4" /> 分割
+                            <button onClick={splitMenu.toggle} className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm text-white transition-colors" title="分割/刪除">
+                                <SplitIcon className="w-4 h-4" /> <span className="hidden md:inline">分割/刪除</span>
                             </button>
                             {splitMenu.isOpen && (
-                                <div className="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-1 z-30">
-                                    <button
-                                        onClick={deletePages}
-                                        disabled={selectedPages.size === 0}
-                                        className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
+                                <div className="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-1 z-50 border border-gray-600">
+                                    <button onClick={deletePages} disabled={selectedPages.size === 0} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-600 disabled:opacity-50">
                                         刪除選取 ({selectedPages.size})
                                     </button>
-                                    <button
-                                        onClick={handleExportSelected}
-                                        disabled={selectedPages.size === 0}
-                                        className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
+                                    <button onClick={handleExportSelected} disabled={selectedPages.size === 0} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-600 disabled:opacity-50">
                                         匯出選取 ({selectedPages.size})
                                     </button>
                                 </div>
                             )}
                         </div>
-                         <div className="h-4 border-l border-gray-600 mx-1"></div>
-                        {/* Draw Tools */}
-                         <div className="flex items-center gap-1">
-                            <button onClick={() => setActiveTool('move')} title="選取/移動" className={`p-1.5 rounded-full ${activeTool === 'move' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}> <PointerIcon className="w-4 h-4" /> </button>
-                            <button onClick={() => setActiveTool('line')} title="直線" className={`p-1.5 rounded-full ${activeTool === 'line' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}> <LineIcon className="w-4 h-4" /> </button>
-                            <button onClick={() => setActiveTool('arrow')} title="箭頭" className={`p-1.5 rounded-full ${activeTool === 'arrow' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}> <ArrowIcon className="w-4 h-4" /> </button>
-                            <button onClick={() => setActiveTool('rect')} title="方形" className={`p-1.5 rounded-full ${activeTool === 'rect' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}> <RectIcon className="w-4 h-4" /> </button>
-                            <button onClick={() => setActiveTool('circle')} title="圓形" className={`p-1.5 rounded-full ${activeTool === 'circle' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}> <CircleIcon className="w-4 h-4" /> </button>
-                            <button onClick={() => setActiveTool('text')} title="打字" className={`p-1.5 rounded-full ${activeTool === 'text' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}> <TextIcon className="w-4 h-4" /> </button>
+                    </div>
+                    
+                    {/* Right Side: Project Name */}
+                    <div className="flex-1 flex items-center justify-end gap-2">
+                         {showSaveSuccess && <span className="hidden md:inline text-green-400 text-sm animate-pulse ml-2">已儲存!</span>}
+                        <div className="font-bold text-white truncate max-w-[100px] md:max-w-xs">
+                            {projectName}
                         </div>
-                        {isDrawingToolActive && (
-                            <>
-                                <div className="h-4 border-l border-gray-600 mx-1"></div>
-                                <div className="flex items-center gap-3 text-white">
-                                    <div title="顏色">
-                                        <input type="color" value={drawingColor} onChange={(e) => setDrawingColor(e.target.value)} className="w-6 h-6 p-0 border-none rounded bg-transparent cursor-pointer appearance-none" style={{'WebkitAppearance': 'none'}}/>
-                                    </div>
-                                    {activeTool !== 'text' && (
-                                        <div className="flex items-center gap-1" title="線條粗細">
-                                            {[2, 5, 10].map(width => (
-                                                <button key={width} onClick={() => setStrokeWidth(width)} className={`p-1 rounded-full ${strokeWidth === width ? 'bg-blue-600' : 'hover:bg-gray-700'}`}>
-                                                    <div className="bg-white rounded-full" style={{width: `${width+2}px`, height: `${width+2}px`}}></div>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                    {activeTool === 'text' && (
-                                        <>
-                                            <div className="flex items-center gap-2" title="背景色">
-                                                <span className="text-xs">背景:</span>
-                                                <input type="color" value={textBackgroundColor === 'transparent' ? '#ffffff' : textBackgroundColor} onChange={(e) => setTextBackgroundColor(e.target.value)} className="w-6 h-6 p-0 border-none rounded bg-gray-700 cursor-pointer" />
-                                                <button onClick={() => setTextBackgroundColor('transparent')} className={`text-xs px-2 py-0.5 rounded ${textBackgroundColor === 'transparent' ? 'bg-blue-600 text-white' : 'bg-gray-600 hover:bg-gray-500'}`}>
-                                                    無
-                                                </button>
-                                            </div>
-                                            <div title="字體">
-                                                <select value={fontFamily} onChange={(e) => setFontFamily(e.target.value)} className="bg-gray-700 border border-gray-600 rounded px-2 py-0.5 text-xs">
-                                                    <option value="sans-serif">Sans-Serif</option>
-                                                    <option value="serif">Serif</option>
-                                                    <option value="monospace">Monospace</option>
-                                                    <option value="Arial">Arial</option>
-                                                    <option value="Times New Roman">Times New Roman</option>
-                                                </select>
-                                            </div>
-                                            <div title="字體大小">
-                                                <input type="number" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value, 10))} className="bg-gray-700 border border-gray-600 rounded w-16 px-2 py-0.5 text-xs" />
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                            </>
-                        )}
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 justify-end flex-shrink-0">
-                    {showSaveSuccess && <span className="text-green-400 transition-opacity duration-300 text-sm">專案已儲存並開始下載！</span>}
+                {/* Bottom Row (Mobile) / Inline (Desktop): Editing Tools */}
+                <div className="flex items-center justify-center px-3 py-2 bg-gray-900/50 overflow-x-auto no-scrollbar">
+                    <div className="flex items-center gap-3 md:gap-4 min-w-max">
+                        {/* History */}
+                        <div className="flex items-center gap-1 border-r border-gray-600 pr-3">
+                            <button onClick={handleUndo} disabled={!canUndo} className="p-2 hover:bg-gray-700 rounded-full disabled:opacity-30" title="上一步 (Ctrl+Z)">
+                                <UndoIcon className="w-5 h-5" />
+                            </button>
+                            <button onClick={handleRedo} disabled={!canRedo} className="p-2 hover:bg-gray-700 rounded-full disabled:opacity-30" title="下一步">
+                                <RedoIcon className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Drawing Tools */}
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => setActiveTool('move')} title="移動" className={`p-2 rounded-full ${activeTool === 'move' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}> <HandIcon className="w-5 h-5" /> </button>
+                            <button onClick={() => setActiveTool('line')} title="直線" className={`p-2 rounded-full ${activeTool === 'line' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}> <LineIcon className="w-5 h-5" /> </button>
+                            <button onClick={() => setActiveTool('arrow')} title="箭頭" className={`p-2 rounded-full ${activeTool === 'arrow' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}> <ArrowIcon className="w-5 h-5" /> </button>
+                            <button onClick={() => setActiveTool('rect')} title="方形" className={`p-2 rounded-full ${activeTool === 'rect' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}> <RectIcon className="w-5 h-5" /> </button>
+                            <button onClick={() => setActiveTool('circle')} title="圓形" className={`p-2 rounded-full ${activeTool === 'circle' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}> <CircleIcon className="w-5 h-5" /> </button>
+                            <button onClick={() => setActiveTool('text')} title="文字" className={`p-2 rounded-full ${activeTool === 'text' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}> <TextIcon className="w-5 h-5" /> </button>
+                        </div>
+                        
+                        {isDrawingToolActive && (
+                            <div className="flex items-center gap-3 pl-3 border-l border-gray-600">
+                                <input type="color" value={drawingColor} onChange={(e) => setDrawingColor(e.target.value)} className="w-8 h-8 rounded bg-transparent cursor-pointer border-none p-0" />
+                                
+                                {activeTool !== 'text' && (
+                                     <div className="flex items-center gap-1">
+                                        {[2, 5, 10].map(width => (
+                                            <button key={width} onClick={() => setStrokeWidth(width)} className={`w-6 h-6 flex items-center justify-center rounded-full ${strokeWidth === width ? 'bg-gray-600' : ''}`}>
+                                                <div className="bg-white rounded-full" style={{width: `${Math.min(width+2, 14)}px`, height: `${Math.min(width+2, 14)}px`}}></div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                 {activeTool === 'text' && (
+                                    <div className="flex items-center gap-2 md:gap-3">
+                                        {/* Font Size */}
+                                        <div className="flex items-center gap-1">
+                                            <input type="number" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value, 10))} className="bg-gray-700 border border-gray-600 rounded w-10 md:w-12 px-1 text-sm text-center text-white" />
+                                            <span className="text-xs text-gray-400 hidden md:inline">px</span>
+                                        </div>
+                                        
+                                        {/* Font Family */}
+                                        <select 
+                                            value={fontFamily} 
+                                            onChange={(e) => setFontFamily(e.target.value)} 
+                                            className="bg-gray-700 text-white border border-gray-600 rounded text-xs md:text-sm h-8 px-1 max-w-[80px] md:max-w-[120px]"
+                                        >
+                                            <option value="sans-serif">Sans Serif</option>
+                                            <option value="serif">Serif</option>
+                                            <option value="monospace">Mono</option>
+                                            <option value="Arial">Arial</option>
+                                            <option value="Times New Roman">Times New Roman</option>
+                                            <option value="Courier New">Courier New</option>
+                                            <option value="Georgia">Georgia</option>
+                                            <option value="Verdana">Verdana</option>
+                                        </select>
+
+                                        {/* Background Color */}
+                                        <div className="flex items-center gap-2 border-l border-gray-600 pl-2 md:pl-3">
+                                             <label className="flex items-center gap-1 text-xs text-gray-300 cursor-pointer select-none">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={textBackgroundColor !== 'transparent'} 
+                                                    onChange={(e) => setTextBackgroundColor(e.target.checked ? '#ffffff' : 'transparent')} 
+                                                    className="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-0 w-3 h-3 md:w-4 md:h-4"
+                                                />
+                                                <span className="hidden md:inline">背景</span>
+                                             </label>
+                                             {textBackgroundColor !== 'transparent' && (
+                                                 <input 
+                                                    type="color" 
+                                                    value={textBackgroundColor} 
+                                                    onChange={(e) => setTextBackgroundColor(e.target.value)} 
+                                                    className="w-6 h-6 md:w-8 md:h-8 rounded bg-transparent cursor-pointer border-none p-0" 
+                                                    title="背景顏色"
+                                                 />
+                                             )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </header>
 
-            <div className="flex-grow flex overflow-hidden">
+            <div className="flex-grow flex overflow-hidden relative">
+                {/* Mobile Sidebar Backdrop */}
+                {isSidebarOpen && (
+                    <div 
+                        className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden"
+                        onClick={() => setIsSidebarOpen(false)}
+                    />
+                )}
+
+                {/* Sidebar (Thumbnails) - Responsive Drawer */}
                 <aside 
                     ref={sidebarRef}
-                    className="w-56 flex-shrink-0 bg-gray-800 p-2 overflow-y-auto"
+                    className={`
+                        flex-shrink-0 bg-gray-800 overflow-y-auto transition-transform duration-300 ease-in-out z-40
+                        fixed inset-y-0 left-0 w-64 shadow-2xl transform
+                        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+                        md:relative md:translate-x-0 md:w-56 md:shadow-none md:block
+                    `}
                     onWheel={handleSidebarWheel}
                 >
-                    <div className="sticky top-0 bg-gray-800 bg-opacity-75 backdrop-blur-sm z-10 flex justify-between items-center mb-2 p-2 rounded-lg shadow-lg">
-                        <h2 className="text-sm font-semibold">
+                    {/* Mobile Sidebar Header Controls */}
+                    <div className="md:hidden flex items-center justify-between p-3 border-b border-gray-700 bg-gray-800 sticky top-0 z-10">
+                         <h2 className="text-sm font-semibold text-white tabular-nums">
                             {selectionMode === 'view'
                                 ? `頁面 (${viewedPageIndex > -1 ? viewedPageIndex + 1 : 0}/${state.pages.length})`
-                                : `已選取 ${selectedPages.size}/${state.pages.length} 頁`
+                                : `已選取 ${selectedPages.size}`
                             }
                         </h2>
                         <button 
                             onClick={() => setSelectionMode(m => m === 'view' ? 'select' : 'view')} 
-                            className="p-2 rounded-full hover:bg-gray-700 transition-colors"
-                            title={selectionMode === 'view' ? '切換至選取模式' : '切換至檢視模式'}
+                            className={`p-2 rounded hover:bg-gray-700 ${selectionMode === 'select' ? 'text-blue-400' : 'text-gray-400'}`}
+                            title={selectionMode === 'view' ? '切換至多選模式' : '切換至檢視模式'}
                         >
-                            {selectionMode === 'view' ? <EyeIcon className="w-5 h-5" /> : <CheckSquareIcon className="w-5 h-5" />}
+                            {selectionMode === 'view' ? <CheckSquareIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
                         </button>
                     </div>
-                     <div className="grid grid-cols-1 gap-2">
+
+                     <div className="grid grid-cols-2 md:grid-cols-1 gap-2 p-2 pb-20 md:pb-0">
                         {state.pages.map(page => (
                             <div key={page.id} 
                                 ref={el => {
@@ -1463,20 +1635,30 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 onDragOver={(e) => e.preventDefault()}
                                 onDrop={() => handleDrop(page.id)}
                                 onDragEnd={() => setDraggedId(null)}
-                                className={`relative aspect-square group cursor-pointer border-2 bg-gray-900/50 rounded-md ${selectedPages.has(page.id) ? 'border-blue-500' : 'border-transparent'} ${draggedId === page.id ? 'dragging' : ''}`}
+                                className={`relative aspect-square group cursor-pointer border-2 bg-gray-900/50 rounded-md overflow-hidden ${selectedPages.has(page.id) ? 'border-blue-500' : 'border-transparent'} ${draggedId === page.id ? 'opacity-50' : ''}`}
                                 onClick={() => handleThumbnailClick(page.id)}
                             >
-                                <img src={pageUrlCache.get(page.id)} className="w-full h-full object-contain rounded" style={{transform: `rotate(${page.rotation}deg)`}} />
+                                <img src={pageUrlCache.get(page.id)} className="w-full h-full object-contain" style={{transform: `rotate(${page.rotation}deg)`}} />
+                                <div className="absolute bottom-0 right-0 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-tl">
+                                    {state.pages.findIndex(p => p.id === page.id) + 1}
+                                </div>
                             </div>
                         ))}
                     </div>
                 </aside>
                 
-                <main className="flex-1 p-4 flex flex-col bg-gray-900 relative" onWheel={handleMainViewWheel}>
+                {/* Main Canvas Area */}
+                <main className="flex-1 p-4 flex flex-col bg-gray-900 relative overflow-hidden" onWheel={handleMainViewWheel}>
                     <div className="flex-grow overflow-hidden flex items-center justify-center">
                         {viewedPage ? (
-                            <div className="relative touch-none" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transition: 'transform 0.2s ease-in-out', transformOrigin: 'center center' }}>
-                               <img ref={imageRef} src={pageUrlCache.get(viewedPage.id)} className="max-w-full max-h-full object-contain shadow-lg transition-transform duration-200 pointer-events-none" style={{transform: `rotate(${viewedPage.rotation}deg)`}}/>
+                            <div className="relative touch-none select-none" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transition: 'transform 0.2s ease-in-out', transformOrigin: 'center center' }}>
+                               <img 
+                                    ref={imageRef} 
+                                    src={pageUrlCache.get(viewedPage.id)} 
+                                    className="max-w-full max-h-full object-contain shadow-lg transition-transform duration-200 pointer-events-none" 
+                                    style={{transform: `rotate(${viewedPage.rotation}deg)`}}
+                                    onLoad={() => setImageLoadedCount(c => c + 1)}
+                               />
                                <canvas
                                     ref={canvasRef}
                                     className={`absolute top-0 left-0 pointer-events-auto z-10`}
@@ -1495,7 +1677,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                        value={textInput.value}
                                        onChange={(e) => setTextInput(t => ({...t, value: e.target.value}))}
                                        onBlur={handleTextBlur}
-                                       className="absolute bg-transparent border p-1 z-20"
+                                       className="absolute border p-1 z-20 overflow-auto resize whitespace-pre"
                                        style={{ 
                                            left: textInput.x * zoom, 
                                            top: textInput.y * zoom, 
@@ -1503,8 +1685,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                            fontFamily: fontFamily,
                                            color: drawingColor,
                                            borderColor: drawingColor,
+                                           backgroundColor: textBackgroundColor,
                                            transform: `rotate(${viewedPage.rotation}deg)`,
-                                           transformOrigin: 'top left'
+                                           transformOrigin: 'top left',
+                                           minWidth: `${100 * zoom}px`,
+                                           minHeight: `${(fontSize * 1.5) * zoom}px`
                                         }}
                                    />
                                )}
@@ -1512,17 +1697,19 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                             ) : <p className="text-gray-500">沒有頁面可顯示</p>
                         }
                     </div>
+                    
+                    {/* Zoom Controls */}
                     {viewedPage && (
-                        <div className="absolute bottom-5 right-5 z-30 bg-gray-800 bg-opacity-75 rounded-full flex items-center text-white shadow-lg">
-                            <button onClick={handleZoomOut} className="p-2 hover:bg-gray-700 rounded-full transition-colors" title="縮小">
-                                <MinusIcon className="w-6 h-6" />
+                        <div className="absolute bottom-6 right-6 z-30 bg-gray-800/90 backdrop-blur-sm rounded-full flex items-center text-white shadow-xl border border-gray-700">
+                            <button onClick={handleZoomOut} className="p-3 hover:bg-gray-700 rounded-full transition-colors" title="縮小">
+                                <MinusIcon className="w-5 h-5" />
                             </button>
-                            <span className="px-2 text-sm font-semibold w-16 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
-                             <button onClick={handleResetZoom} className="p-2 hover:bg-gray-700 rounded-full transition-colors" title="恢復 100%">
-                                <ResetZoomIcon className="w-6 h-6" />
+                            <span className="px-1 text-sm font-mono font-semibold w-12 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+                             <button onClick={handleResetZoom} className="p-3 hover:bg-gray-700 rounded-full transition-colors" title="恢復 100%">
+                                <ResetZoomIcon className="w-5 h-5" />
                             </button>
-                            <button onClick={handleZoomIn} className="p-2 hover:bg-gray-700 rounded-full transition-colors" title="放大">
-                                <PlusIcon className="w-6 h-6" />
+                            <button onClick={handleZoomIn} className="p-3 hover:bg-gray-700 rounded-full transition-colors" title="放大">
+                                <PlusIcon className="w-5 h-5" />
                             </button>
                         </div>
                     )}
@@ -1532,256 +1719,295 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     );
 };
 
-// --- Home Page Component ---
-const HomePage: React.FC<{ 
-    onProjectSelect: (project: StoredProject) => void; 
-    onMergeStart: (files: File[]) => void;
-}> = ({ onProjectSelect, onMergeStart }) => {
+const App: React.FC = () => {
     const [projects, setProjects] = useState<ProjectMetadata[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
-    const photoInputRef = useRef<HTMLInputElement>(null);
-    const pdfInputRef = useRef<HTMLInputElement>(null);
-    const mergeInputRef = useRef<HTMLInputElement>(null);
+    const [currentProject, setCurrentProject] = useState<StoredProject | null>(null);
+    const [isMerging, setIsMerging] = useState(false);
+    const [mergeFiles, setMergeFiles] = useState<File[]>([]);
+    const [showMergeSort, setShowMergeSort] = useState(false);
+    const [sortedMergeFiles, setSortedMergeFiles] = useState<MergeFileData[]>([]);
+    const [isProcessing, setIsProcessing] = useState(false);
 
-    useEffect(() => {
-        const fetchMeta = async () => {
-            const meta = await dbService.getProjectsMetadata();
-            setProjects(meta);
-        };
-        fetchMeta();
+    const loadProjects = useCallback(async () => {
+        try {
+            const projs = await dbService.getProjectsMetadata();
+            setProjects(projs);
+        } catch (error) {
+            console.error("Failed to load projects", error);
+        }
     }, []);
 
-    const createNewProject = (name: string, pages: { id: string; data: Blob }[]) => {
-        const newProject: StoredProject = {
-            id: `proj_${Date.now()}`,
-            name,
-            pages: pages.map(p => ({ ...p, rotation: 0, objects: [] })),
-        };
-        onProjectSelect(newProject);
-    };
+    useEffect(() => {
+        loadProjects();
+    }, [loadProjects]);
 
-    const handlePhotoImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = event.target.files;
-        if (!files || files.length === 0) return;
-        setIsLoading(true);
+    const handleCreateProject = async (file: File) => {
+        setIsProcessing(true);
         try {
-            const imageFiles = [...files].filter((f) => f.type.startsWith('image/'));
-            const pages = imageFiles.map((file, index) => ({
-                id: `page_${Date.now()}_${index}`,
-                data: file, // Store the File object (which is a Blob) directly
-            }));
-            createNewProject(`新專案-${new Date().toLocaleDateString()}`, pages);
-        } catch (error) {
-            console.error("Error importing photos:", error);
-            if (error instanceof Error) {
-                alert(`匯入相片時發生錯誤: ${error.message}`);
-            } else {
-                alert("匯入相片時發生錯誤。");
-            }
-        } finally {
-            setIsLoading(false);
-        }
-    };
-    
-    const handlePdfImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file || !file.type.includes('pdf')) return;
-        setIsLoading(true);
-        try {
-            const pdfBytes = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({ data: pdfBytes }).promise;
-            const pagesData = [];
-            const pageCount = pdf.numPages;
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const pages: PageData[] = [];
 
-            for (let i = 1; i <= pageCount; i++) {
+            for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
-                const scale = 2.0; // Adjusted scale, balance between quality and size
-                const viewport = page.getViewport({ scale });
-
+                const viewport = page.getViewport({ scale: 1.0 }); // Thumbnail
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
-                if (!context) {
-                    throw new Error('無法獲取 canvas context');
-                }
+                if (!context) continue;
 
-                canvas.height = viewport.height;
                 canvas.width = viewport.width;
-
+                canvas.height = viewport.height;
+                
                 const renderContext = {
                     canvasContext: context,
                     viewport: viewport,
-                    canvas: canvas, // Include canvas in renderContext for compatibility
+                    canvas: canvas,
                 };
                 await page.render(renderContext).promise;
 
                 const blob = await new Promise<Blob | null>(resolve => 
-                    canvas.toBlob(resolve, 'image/jpeg', CompressionQuality.HIGH)
+                    canvas.toBlob(resolve, 'image/jpeg', CompressionQuality.NORMAL)
                 );
 
-                if (!blob) {
-                    throw new Error('Canvas toBlob failed');
+                if (blob) {
+                    pages.push({
+                        id: `page_${Date.now()}_${i}`,
+                        data: blob,
+                        rotation: 0,
+                        objects: []
+                    });
                 }
+            }
 
-                pagesData.push({
-                    id: `page_${Date.now()}_${i - 1}`,
-                    data: blob,
+            const newProject: StoredProject = {
+                id: `proj_${Date.now()}`,
+                name: file.name.replace(/\.pdf$/i, ''),
+                pages: pages,
+                timestamp: Date.now()
+            };
+
+            await dbService.saveProject(newProject);
+            await loadProjects();
+            setCurrentProject(newProject);
+        } catch (error) {
+            console.error("Error creating project:", error);
+            alert("建立專案失敗。");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleCreateProjectFromImages = async (files: File[]) => {
+        setIsProcessing(true);
+        try {
+            const pages: PageData[] = [];
+            // Sort by name to ensure order
+            const sortedFiles = files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+            for (let i = 0; i < sortedFiles.length; i++) {
+                const file = sortedFiles[i];
+                // Ensure it's an image
+                if (!file.type.startsWith('image/')) continue;
+
+                pages.push({
+                    id: `page_${Date.now()}_${i}`,
+                    data: file,
+                    rotation: 0,
+                    objects: []
                 });
             }
-            createNewProject(file.name.replace(/\.pdf$/i, ''), pagesData);
-        } catch (error) {
-            console.error("Error importing PDF:", error);
-            if (error instanceof Error) {
-                alert(`匯入 PDF 失敗: ${error.message}。檔案可能已損毀或格式不支援。`);
-            } else {
-                alert("匯入 PDF 失敗。檔案可能已損毀或格式不支援。");
+
+            if (pages.length === 0) {
+                alert("請選擇有效的圖片檔案。");
+                return;
             }
+
+            const newProject: StoredProject = {
+                id: `proj_img_${Date.now()}`,
+                name: files.length === 1 ? files[0].name.split('.')[0] : `圖片專案 ${new Date().toLocaleDateString()}`,
+                pages: pages,
+                timestamp: Date.now()
+            };
+
+            await dbService.saveProject(newProject);
+            await loadProjects();
+            setCurrentProject(newProject);
+
+        } catch (error) {
+            console.error("Error creating project from images:", error);
+            alert("建立專案失敗。");
         } finally {
-            setIsLoading(false);
+            setIsProcessing(false);
+        }
+    };
+    
+    const handleOpenProject = async (id: string) => {
+        const project = await dbService.getProjectData(id);
+        if (project) {
+            setCurrentProject(project);
+        }
+    };
+    
+    const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (confirm('您確定要刪除此專案嗎？')) {
+            await dbService.deleteProject(id);
+            await loadProjects();
         }
     };
 
-    const handleMergeImport = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = event.target.files;
-        if (!files || files.length === 0) return;
+    const handleSaveProject = async (project: StoredProject, newName?: string) => {
+        const updatedProject = { ...project, timestamp: Date.now() };
+        if (newName) {
+            updatedProject.name = newName;
+        }
+        await dbService.saveProject(updatedProject);
+        await loadProjects();
         
-        const pdfFiles = [...files].filter(f => f.type.includes('pdf'));
-        if (pdfFiles.length === 0) {
-            alert("請選擇 PDF 檔案。");
-            return;
-        }
-        onMergeStart(pdfFiles);
-    };
-
-    const loadProject = async (id: string) => {
-        const projectData = await dbService.getProjectData(id);
-        if (projectData) {
-            onProjectSelect(projectData);
-        } else {
-            alert("無法載入專案。");
+        // Update current project state if it's the one being edited
+        if (currentProject && currentProject.id === project.id) {
+             setCurrentProject(updatedProject);
+        } else if (!currentProject) {
+            // If we just saved a new merged project
+             setCurrentProject(updatedProject);
         }
     };
 
-    const deleteProject = async (id: string) => {
-      if (window.confirm("確定要刪除這個專案嗎？此操作無法復原。")) {
-        await dbService.deleteProject(id);
-        const updatedMeta = await dbService.getProjectsMetadata();
-        setProjects(updatedMeta);
-      }
+    const onFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files;
+        if (files && files.length > 0) {
+            // If one file and it's a PDF, treat as standard PDF project
+            if (files.length === 1 && files[0].type === 'application/pdf') {
+                await handleCreateProject(files[0]);
+            } else {
+                // Otherwise, treat as image project (multiple or single image)
+                await handleCreateProjectFromImages(Array.from(files));
+            }
+        }
+        event.target.value = '';
     };
+
+    const onMergeFilesChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+         if (event.target.files && event.target.files.length > 0) {
+            setMergeFiles(Array.from(event.target.files));
+            setIsMerging(true);
+            setShowMergeSort(false);
+        }
+        event.target.value = '';
+    };
+
+    const handleMergeConfirm = (sorted: MergeFileData[]) => {
+        setSortedMergeFiles(sorted);
+        setShowMergeSort(true);
+        setIsMerging(false); // Close modal
+    };
+
+    if (currentProject) {
+        return (
+            <EditorPage 
+                project={currentProject} 
+                onSave={handleSaveProject} 
+                onClose={() => {
+                    setCurrentProject(null);
+                    loadProjects(); // Refresh list when closing
+                }} 
+            />
+        );
+    }
+
+    if (showMergeSort) {
+        return (
+            <MergeSortPage
+                sortedFiles={sortedMergeFiles}
+                onSave={async (project) => {
+                    await handleSaveProject(project);
+                    setShowMergeSort(false);
+                    setCurrentProject(project);
+                }}
+                onCancel={() => setShowMergeSort(false)}
+            />
+        );
+    }
 
     return (
-        <div className="p-8">
-            {isLoading && (
+        <div className="min-h-screen bg-gray-900 text-white p-8">
+            {isProcessing && (
                 <div className="fixed inset-0 bg-black bg-opacity-70 flex flex-col items-center justify-center z-50">
                     <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
-                    <p className="text-white mt-4">讀取中...</p>
+                    <p className="text-white mt-4">處理中，請稍候...</p>
                 </div>
             )}
-            <header className="text-center mb-12">
-                <h1 className="text-4xl font-bold text-white mb-2">PDF 編輯工具</h1>
-                <p className="text-lg text-gray-400">建立、編輯和管理您的 PDF 檔案</p>
-            </header>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto mb-12">
-                <button onClick={() => photoInputRef.current?.click()} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg p-8 flex flex-col items-center justify-center transition-transform transform hover:scale-105">
-                    <PlusIcon className="w-16 h-16 mb-4"/>
-                    <h2 className="text-2xl font-semibold">從相片建立</h2>
-                    <p className="text-blue-200">將多張圖片合併成一個 PDF 檔案</p>
-                </button>
-                <button onClick={() => pdfInputRef.current?.click()} className="bg-green-600 hover:bg-green-700 text-white rounded-lg p-8 flex flex-col items-center justify-center transition-transform transform hover:scale-105">
-                    <FolderOpenIcon className="w-16 h-16 mb-4"/>
-                    <h2 className="text-2xl font-semibold">開啟 PDF 檔案</h2>
-                    <p className="text-green-200">編輯現有的 PDF 檔案</p>
-                </button>
-                 <button onClick={() => mergeInputRef.current?.click()} className="bg-purple-600 hover:bg-purple-700 text-white rounded-lg p-8 flex flex-col items-center justify-center transition-transform transform hover:scale-105">
-                    <MergeIcon className="w-16 h-16 mb-4"/>
-                    <h2 className="text-2xl font-semibold">合併 PDF 與排序</h2>
-                    <p className="text-purple-200">合併多個檔案並視覺化調整頁序</p>
-                </button>
-            </div>
-            
-            <input type="file" multiple accept="image/*" ref={photoInputRef} onChange={handlePhotoImport} className="hidden" />
-            <input type="file" accept=".pdf" ref={pdfInputRef} onChange={handlePdfImport} className="hidden" />
-            <input type="file" multiple accept=".pdf" ref={mergeInputRef} onChange={handleMergeImport} className="hidden" />
 
-            <div>
-                <h2 className="text-2xl font-bold text-white mb-4 border-b border-gray-700 pb-2">我的專案</h2>
-                {projects.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {projects.map(p => (
-                            <div key={p.id} className="bg-gray-800 rounded-lg shadow-lg p-4 flex flex-col justify-between hover:bg-gray-700 transition-colors">
-                                <div>
-                                    <h3 className="font-bold text-lg truncate">{p.name}</h3>
-                                    <p className="text-sm text-gray-400">{p.pageCount} 頁</p>
-                                    <p className="text-xs text-gray-500 mt-2">{new Date(p.timestamp).toLocaleString()}</p>
+            {isMerging && (
+                <FileSortModal 
+                    files={mergeFiles} 
+                    onCancel={() => setIsMerging(false)} 
+                    onConfirm={handleMergeConfirm} 
+                />
+            )}
+            
+            <div className="max-w-5xl mx-auto">
+                <header className="flex flex-col md:flex-row items-center justify-between mb-10 border-b border-gray-700 pb-6 gap-4">
+                    <div>
+                        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+                            PDF 編輯與合併工具
+                        </h1>
+                        <p className="text-gray-400 mt-1">在瀏覽器中直接管理、編輯與合併您的 PDF 文件，安全無虞。</p>
+                    </div>
+                    <div className="flex gap-4">
+                        <label className="cursor-pointer bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded flex items-center gap-2 transition-colors">
+                            <input type="file" accept="application/pdf" multiple onChange={onMergeFilesChange} className="hidden" />
+                            <MergeIcon className="w-5 h-5" />
+                            合併 PDF
+                        </label>
+                         <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded flex items-center gap-2 transition-colors shadow-lg shadow-blue-900/50">
+                            <input type="file" accept="application/pdf, image/png, image/jpeg, image/jpg" multiple onChange={onFileChange} className="hidden" />
+                            <PlusIcon className="w-5 h-5" />
+                            新增專案
+                        </label>
+                    </div>
+                </header>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {projects.map(project => (
+                        <div 
+                            key={project.id} 
+                            onClick={() => handleOpenProject(project.id)}
+                            className="bg-gray-800 rounded-xl p-5 border border-gray-700 hover:border-blue-500 cursor-pointer transition-all hover:shadow-xl hover:shadow-blue-900/20 group relative"
+                        >
+                            <div className="flex items-start justify-between mb-4">
+                                <div className="p-3 bg-gray-700 rounded-lg group-hover:bg-blue-900/30 group-hover:text-blue-400 transition-colors">
+                                    <FileIcon className="w-8 h-8" />
                                 </div>
-                                <div className="flex gap-2 mt-4">
-                                    <button onClick={() => loadProject(p.id)} className="flex-grow bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-3 rounded">開啟</button>
-                                    <button onClick={() => deleteProject(p.id)} className="bg-red-600 hover:bg-red-700 text-white p-2 rounded"><TrashIcon className="w-4 h-4" /></button>
-                                </div>
+                                <button 
+                                    onClick={(e) => handleDeleteProject(project.id, e)}
+                                    className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                                    title="刪除專案"
+                                >
+                                    <TrashIcon className="w-5 h-5" />
+                                </button>
                             </div>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="text-center py-12 bg-gray-800 rounded-lg">
-                        <p className="text-gray-500">您還沒有任何專案。</p>
-                        <p className="text-gray-500">請從上方選項建立一個新專案。</p>
-                    </div>
-                )}
+                            <h3 className="font-bold text-lg truncate mb-1" title={project.name}>{project.name}</h3>
+                            <div className="flex items-center justify-between text-sm text-gray-400">
+                                <span>{project.pageCount} 頁</span>
+                                <span>{new Date(project.timestamp).toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                    ))}
+                    
+                    {projects.length === 0 && (
+                        <div className="col-span-full text-center py-20 text-gray-500 border-2 border-dashed border-gray-700 rounded-xl">
+                            <div className="mb-4 mx-auto w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center">
+                                <FolderOpenIcon className="w-8 h-8 text-gray-600" />
+                            </div>
+                            <h3 className="text-xl font-semibold text-gray-400">尚未建立專案</h3>
+                            <p className="max-w-md mx-auto mt-2">上傳 PDF 開始編輯，或選取多個 PDF 進行合併。</p>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );
-};
-
-// --- Main App Component (Router) ---
-const App: React.FC = () => {
-  const [activeProject, setActiveProject] = useState<StoredProject | null>(null);
-  const [mergeFiles, setMergeFiles] = useState<File[] | null>(null);
-  const [sortedMergeFiles, setSortedMergeFiles] = useState<MergeFileData[] | null>(null);
-
-  const handleSaveProject = async (project: StoredProject, newName?: string) => {
-    const finalProject = { ...project, name: newName || project.name };
-    await dbService.saveProject(finalProject);
-    // After saving, stay on the editor page. The state is already in sync.
-  };
-
-  const handleCloseEditor = () => {
-    setActiveProject(null);
-  };
-
-  const handleMergeStart = (files: File[]) => {
-      setMergeFiles(files);
-  };
-
-  const handleMergeConfirm = (sortedFiles: MergeFileData[]) => {
-      setMergeFiles(null);
-      setSortedMergeFiles(sortedFiles);
-  };
-
-  const handleMergeCancel = () => {
-      setMergeFiles(null);
-      setSortedMergeFiles(null);
-  };
-
-  const handleMergeSave = async (project: StoredProject) => {
-      await dbService.saveProject(project);
-      setSortedMergeFiles(null);
-      setActiveProject(project);
-  };
-
-  if (mergeFiles) {
-      return <FileSortModal files={mergeFiles} onCancel={handleMergeCancel} onConfirm={handleMergeConfirm} />;
-  }
-
-  if (sortedMergeFiles) {
-      return <MergeSortPage sortedFiles={sortedMergeFiles} onSave={handleMergeSave} onCancel={handleMergeCancel} />;
-  }
-
-  if (activeProject) {
-    return <EditorPage project={activeProject} onSave={handleSaveProject} onClose={handleCloseEditor} />;
-  }
-
-  return <HomePage onProjectSelect={setActiveProject} onMergeStart={handleMergeStart} />;
 };
 
 export default App;

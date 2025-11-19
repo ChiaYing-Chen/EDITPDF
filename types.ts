@@ -1,3 +1,4 @@
+
 export interface ProjectMetadata {
   id: string;
   name: string;
@@ -31,6 +32,7 @@ export interface StoredProject {
   id: string;
   name: string;
   pages: PageData[];
+  timestamp: number;
 }
 
 export interface EditorPageProps {
