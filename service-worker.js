@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'pdf-editor-v3'; // Increment version to force update
+const CACHE_NAME = 'pdf-editor-v4'; // Increment version to force update
 const BASE_PATH = '/EDITPDF/';
 const ASSETS_TO_CACHE = [
   BASE_PATH,

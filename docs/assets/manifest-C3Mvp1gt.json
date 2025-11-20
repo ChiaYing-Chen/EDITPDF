@@ -13,8 +13,8 @@
       "sizes": "512x512"
     }
   ],
-  "start_url": "./index.html",
-  "scope": "./",
+  "start_url": "/EDITPDF/",
+  "scope": "/EDITPDF/",
   "display": "standalone",
   "theme_color": "#0f172a",
   "background_color": "#0f172a",
