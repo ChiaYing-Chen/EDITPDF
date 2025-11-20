@@ -8,7 +8,7 @@
     <title>PDF 編輯工具</title>
     
     <!-- PWA Meta Tags -->
-    <link rel="manifest" href="./manifest.json">
+    <link rel="manifest" href="/EDITPDF/assets/manifest-C3Mvp1gt.json">
     <meta name="theme-color" content="#0f172a">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -81,43 +81,28 @@
         background-color: #0f172a;
       }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "jspdf": "https://aistudiocdn.com/jspdf@^2.5.1",
-    "pdf-lib": "https://aistudiocdn.com/pdf-lib@^1.17.1",
-    "pdfjs-dist": "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs",
-    "pdf-dist": "https://aistudiocdn.com/pdf-dist@^1.0.0",
-    "dexie": "https://aistudiocdn.com/dexie@^4.0.8",
-    "path": "https://aistudiocdn.com/path@^0.12.7",
-    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
-    "vite": "https://aistudiocdn.com/vite@^7.2.2",
-    "url": "https://aistudiocdn.com/url@^0.11.4"
-  }
-}
-</script>
-</head>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://aistudiocdn.com/react@^19.2.0",
+        "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+        "react/": "https://aistudiocdn.com/react@^19.2.0/",
+        "jspdf": "https://aistudiocdn.com/jspdf@^2.5.1",
+        "pdf-lib": "https://aistudiocdn.com/pdf-lib@^1.17.1",
+        "pdfjs-dist": "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs",
+        "pdf-dist": "https://aistudiocdn.com/pdf-dist@^1.0.0",
+        "dexie": "https://aistudiocdn.com/dexie@^4.0.8",
+        "path": "https://aistudiocdn.com/path@^0.12.7",
+        "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
+        "vite": "https://aistudiocdn.com/vite@^7.2.2",
+        "url": "https://aistudiocdn.com/url@^0.11.4"
+      }
+    }
+    </script>
+    <script type="module" crossorigin src="/EDITPDF/assets/index-D2vw25VB.js"></script>
+  </head>
   <body class="bg-slate-950 text-white antialiased selection:bg-indigo-500 selection:text-white">
     <div id="root"></div>
-    <script type="module" src="./index.tsx"></script>
-    
-    <!-- Service Worker Registration -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          // Using relative path ./service-worker.js is crucial for subdirectory deployments
-          navigator.serviceWorker.register('./service-worker.js', { scope: './' })
-            .then((registration) => {
-              console.log('ServiceWorker registration successful with scope: ', registration.scope);
-            })
-            .catch((err) => {
-              console.log('ServiceWorker registration failed: ', err);
-            });
-        });
-      }
-    </script>
   </body>
 </html>

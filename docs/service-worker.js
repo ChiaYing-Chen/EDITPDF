@@ -1,10 +1,9 @@
 
-const CACHE_NAME = 'pdf-editor-v4'; // Increment version to force update
-const BASE_PATH = '/EDITPDF/';
+const CACHE_NAME = 'pdf-editor-v2'; // Increment version to force update
 const ASSETS_TO_CACHE = [
-  BASE_PATH,
-  `${BASE_PATH}index.html`,
-  `${BASE_PATH}manifest.json`,
+  './',
+  './index.html',
+  './manifest.json',
   'https://cdn.tailwindcss.com',
   'https://cdn-icons-png.flaticon.com/512/337/337946.png'
 ];
@@ -71,7 +70,7 @@ self.addEventListener('fetch', (event) => {
         // 3. Fallback for Navigation requests (e.g. opening the app via URL)
         // If the user navigates to /EDITPDF/ but we only have /EDITPDF/index.html cached
         if (event.request.mode === 'navigate') {
-          return cache.match(`${BASE_PATH}index.html`);
+          return cache.match('./index.html');
         }
 
         // Return simple error or let browser handle it
