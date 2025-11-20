@@ -8,7 +8,7 @@
     <title>PDF 編輯工具</title>
     
     <!-- PWA Meta Tags -->
-    <link rel="manifest" href="/EDITPDF/assets/manifest-C3Mvp1gt.json">
+    <link rel="manifest" href="./manifest.json">
     <meta name="theme-color" content="#0f172a">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -81,7 +81,6 @@
         background-color: #0f172a;
       }
     </style>
-
   <script type="importmap">
 {
   "imports": {
@@ -100,10 +99,10 @@
   }
 }
 </script>
-  <script type="module" crossorigin src="/EDITPDF/assets/index-BEXfOwjS.js"></script>
 </head>
   <body class="bg-slate-950 text-white antialiased selection:bg-indigo-500 selection:text-white">
     <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
     
     <!-- Service Worker Registration -->
     <script>
