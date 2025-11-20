@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import Dexie, { type Table } from 'dexie';
-import { ProjectMetadata, StoredProject, EditorPageProps, EditorPageState, CompressionQuality, EditorObject, DrawingTool, PageData } from './types';
+import { ProjectMetadata, StoredProject, EditorPageProps, EditorPageState, CompressionQuality, EditorObject, DrawingTool, PageData, StampConfig } from './types';
 
 // Configure the PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://esm.sh/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
@@ -139,6 +138,17 @@ const ImageIcon: React.FC<{ className?: string }> = ({ className }) => (
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
     </svg>
 );
+const StampIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11.5 17.914a1 1 0 00-.293.707V19a1 1 0 01-1 1h-1a1 1 0 01-1-1v-3a1 1 0 00-.293-.707L7.5 14.5" opacity="0.5" />
+    </svg>
+);
+const PenIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+    </svg>
+);
 
 const ResetZoomIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -230,6 +240,325 @@ const useDropdown = () => {
     return { isOpen, ref, toggle, close };
 };
 
+// --- Components for Stamp Feature ---
+const StampPickerModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    stamps: StampConfig[];
+    onSelect: (stamp: StampConfig) => void;
+    onManage: () => void;
+}> = ({ isOpen, onClose, stamps, onSelect, onManage }) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[65] backdrop-blur-sm p-4" onClick={onClose}>
+            <div className="bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+                <div className="p-4 border-b border-slate-700 flex justify-between items-center">
+                    <h3 className="font-bold text-white text-lg flex items-center gap-2">
+                        <StampIcon className="w-5 h-5 text-blue-400" />
+                        選擇印章
+                    </h3>
+                    <button onClick={onClose} className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-700 transition-colors">
+                        <XIcon className="w-5 h-5" />
+                    </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                    {stamps.length === 0 ? (
+                        <div className="text-center py-8 text-slate-500">
+                            <div className="mb-3 opacity-50">
+                                <StampIcon className="w-12 h-12 mx-auto" />
+                            </div>
+                            <p>尚未設定任何印章</p>
+                            <button 
+                                onClick={onManage}
+                                className="mt-4 text-blue-400 hover:text-blue-300 underline text-sm"
+                            >
+                                立即新增印章
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {stamps.map(stamp => (
+                                <button
+                                    key={stamp.id}
+                                    onClick={() => { onSelect(stamp); onClose(); }}
+                                    className="flex flex-col items-center p-3 rounded-xl bg-slate-700/50 hover:bg-slate-700 border border-slate-600 hover:border-blue-500 transition-all group h-full"
+                                >
+                                    <div 
+                                        className="px-3 py-1.5 rounded shadow-sm mb-2 flex items-center justify-center text-xs font-bold w-full overflow-hidden whitespace-nowrap"
+                                        style={{ 
+                                            color: stamp.textColor, 
+                                            backgroundColor: stamp.backgroundColor,
+                                            minHeight: '30px'
+                                        }}
+                                    >
+                                        {stamp.text}
+                                    </div>
+                                    <div className="text-xs text-slate-300 font-medium truncate w-full text-center">{stamp.name}</div>
+                                    {stamp.shortcutKey && <div className="text-[10px] text-slate-500 mt-1 font-mono">{stamp.shortcutKey}</div>}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+                
+                <div className="p-4 border-t border-slate-700 bg-slate-800/50">
+                     <button 
+                        onClick={onManage}
+                        className="w-full py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                        <PlusIcon className="w-4 h-4" />
+                        管理印章
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const StampSettingsModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+}> = ({ isOpen, onClose }) => {
+    const [stamps, setStamps] = useState<StampConfig[]>([]);
+    const [editingStamp, setEditingStamp] = useState<StampConfig | null>(null);
+    const [isRecordingKey, setIsRecordingKey] = useState(false);
+
+    useEffect(() => {
+        const savedStamps = localStorage.getItem('pdf_editor_stamps');
+        if (savedStamps) {
+            setStamps(JSON.parse(savedStamps));
+        }
+    }, []);
+
+    useEffect(() => {
+        // When stamps change, save to local storage
+        if (stamps.length > 0 || localStorage.getItem('pdf_editor_stamps')) {
+             localStorage.setItem('pdf_editor_stamps', JSON.stringify(stamps));
+        }
+    }, [stamps]);
+
+    const handleSave = () => {
+        if (!editingStamp) return;
+        
+        // Basic validation
+        if (!editingStamp.text) {
+            alert("請輸入印章文字");
+            return;
+        }
+
+        setStamps(prev => {
+            const index = prev.findIndex(s => s.id === editingStamp.id);
+            if (index >= 0) {
+                const newStamps = [...prev];
+                newStamps[index] = editingStamp;
+                return newStamps;
+            } else {
+                if (prev.length >= 10) {
+                    alert("最多只能設定 10 組印章");
+                    return prev;
+                }
+                return [...prev, editingStamp];
+            }
+        });
+        setEditingStamp(null);
+    };
+
+    const handleDelete = (id: string) => {
+        setStamps(prev => prev.filter(s => s.id !== id));
+        if (editingStamp?.id === id) setEditingStamp(null);
+    };
+
+    const handleAddNew = () => {
+        if (stamps.length >= 10) {
+            alert("最多只能設定 10 組印章");
+            return;
+        }
+        setEditingStamp({
+            id: `stamp_${Date.now()}`,
+            name: `印章 ${stamps.length + 1}`,
+            text: '核准',
+            textColor: '#FFFFFF',
+            backgroundColor: '#FF0000',
+            fontSize: 24,
+            shortcutKey: ''
+        });
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (isRecordingKey && editingStamp) {
+            e.preventDefault();
+            const key = e.key.length === 1 ? e.key.toLowerCase() : e.key; // Normalize
+            setEditingStamp({ ...editingStamp, shortcutKey: key });
+            setIsRecordingKey(false);
+        }
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[70] backdrop-blur-sm p-4">
+            <div className="bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 w-full max-w-4xl overflow-hidden flex flex-col md:flex-row max-h-[85vh]">
+                
+                {/* Left Sidebar: Stamp List - Compact on mobile */}
+                <div className="w-full md:w-1/3 border-r border-slate-700 flex flex-col bg-slate-850 h-36 md:h-auto">
+                    <div className="p-3 md:p-4 border-b border-slate-700 flex justify-between items-center sticky top-0 bg-slate-850 z-10">
+                        <h3 className="font-bold text-white text-sm md:text-base">印章列表 ({stamps.length}/10)</h3>
+                        <button onClick={handleAddNew} disabled={stamps.length >= 10} className="p-1.5 bg-blue-600 rounded-lg hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                            <PlusIcon className="w-4 h-4 md:w-5 md:h-5 text-white" />
+                        </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
+                        {stamps.map(stamp => (
+                            <div 
+                                key={stamp.id} 
+                                onClick={() => setEditingStamp(stamp)}
+                                className={`p-2 md:p-3 rounded-xl border cursor-pointer flex items-center justify-between group transition-all ${editingStamp?.id === stamp.id ? 'bg-slate-700 border-blue-500' : 'bg-slate-800 border-slate-700 hover:border-slate-600'}`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded flex items-center justify-center text-[10px] overflow-hidden shadow-sm font-bold shrink-0" style={{ color: stamp.textColor, backgroundColor: stamp.backgroundColor }}>
+                                        {stamp.text.substring(0, 2)}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="text-sm font-medium text-slate-200 truncate">{stamp.name}</div>
+                                        {stamp.shortcutKey && <div className="text-xs text-slate-500 hidden md:block">快捷鍵: <span className="font-mono bg-slate-900 px-1 rounded text-slate-400">{stamp.shortcutKey}</span></div>}
+                                    </div>
+                                </div>
+                                <button onClick={(e) => { e.stopPropagation(); handleDelete(stamp.id); }} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-900 rounded opacity-0 group-hover:opacity-100 transition-all">
+                                    <TrashIcon className="w-4 h-4" />
+                                </button>
+                            </div>
+                        ))}
+                         {stamps.length === 0 && (
+                             <div className="text-center text-slate-500 py-8 text-sm">尚未建立印章</div>
+                         )}
+                    </div>
+                </div>
+
+                {/* Right Content: Editor - Scrollable area with sticky footer */}
+                <div className="w-full md:w-2/3 flex flex-col bg-slate-900 min-h-0">
+                    {editingStamp ? (
+                        <>
+                            <div className="p-4 md:p-6 flex-1 overflow-y-auto custom-scrollbar">
+                                <h3 className="text-lg font-bold text-white mb-4 md:mb-6 hidden md:block">編輯印章</h3>
+                                
+                                <div className="grid gap-4 md:gap-6">
+                                    {/* Preview */}
+                                    <div className="flex flex-col items-center justify-center p-4 bg-slate-800/50 rounded-xl border border-slate-700 border-dashed shrink-0">
+                                        <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider font-semibold">預覽</p>
+                                        <div 
+                                            className="px-6 py-3 rounded-lg shadow-lg flex items-center justify-center"
+                                            style={{ 
+                                                color: editingStamp.textColor, 
+                                                backgroundColor: editingStamp.backgroundColor,
+                                                fontSize: `${editingStamp.fontSize}px`,
+                                                minWidth: '100px',
+                                                fontFamily: 'sans-serif',
+                                                fontWeight: 'bold'
+                                            }}
+                                        >
+                                            {editingStamp.text || "預覽"}
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3 md:gap-4">
+                                        <div className="col-span-1">
+                                            <label className="block text-xs text-slate-400 mb-1.5 font-medium">名稱</label>
+                                            <input 
+                                                type="text" 
+                                                value={editingStamp.name} 
+                                                onChange={e => setEditingStamp({...editingStamp, name: e.target.value})}
+                                                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                                            />
+                                        </div>
+                                        <div className="col-span-1">
+                                            <label className="block text-xs text-slate-400 mb-1.5 font-medium">文字</label>
+                                            <input 
+                                                type="text" 
+                                                value={editingStamp.text} 
+                                                onChange={e => setEditingStamp({...editingStamp, text: e.target.value})}
+                                                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs text-slate-400 mb-1.5 font-medium">文字顏色</label>
+                                            <div className="flex items-center gap-2">
+                                                <input 
+                                                    type="color" 
+                                                    value={editingStamp.textColor} 
+                                                    onChange={e => setEditingStamp({...editingStamp, textColor: e.target.value})}
+                                                    className="h-9 w-full bg-slate-800 border border-slate-700 rounded cursor-pointer p-1"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs text-slate-400 mb-1.5 font-medium">背景顏色</label>
+                                            <div className="flex items-center gap-2">
+                                                <input 
+                                                    type="color" 
+                                                    value={editingStamp.backgroundColor} 
+                                                    onChange={e => setEditingStamp({...editingStamp, backgroundColor: e.target.value})}
+                                                    className="h-9 w-full bg-slate-800 border border-slate-700 rounded cursor-pointer p-1"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs text-slate-400 mb-1.5 font-medium">大小 ({editingStamp.fontSize}px)</label>
+                                            <input 
+                                                type="range" 
+                                                min="12" 
+                                                max="72" 
+                                                value={editingStamp.fontSize} 
+                                                onChange={e => setEditingStamp({...editingStamp, fontSize: parseInt(e.target.value)})}
+                                                className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500 mt-3"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs text-slate-400 mb-1.5 font-medium">快捷鍵</label>
+                                            <div className="flex gap-2">
+                                                <button 
+                                                    onClick={() => setIsRecordingKey(true)}
+                                                    onKeyDown={handleKeyDown}
+                                                    className={`flex-1 bg-slate-800 border ${isRecordingKey ? 'border-blue-500 ring-1 ring-blue-500 text-blue-400' : 'border-slate-700 text-slate-300'} rounded-lg px-2 py-2 text-xs text-center focus:outline-none truncate`}
+                                                >
+                                                    {isRecordingKey ? "按下按鍵" : (editingStamp.shortcutKey ? `${editingStamp.shortcutKey}` : "設定")}
+                                                </button>
+                                                {editingStamp.shortcutKey && (
+                                                    <button onClick={() => setEditingStamp({...editingStamp, shortcutKey: ''})} className="p-2 text-slate-500 hover:text-red-400 bg-slate-800 border border-slate-700 rounded-lg">
+                                                        <XIcon className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="p-4 border-t border-slate-700 flex justify-end gap-3 bg-slate-850 shrink-0 z-20">
+                                <button onClick={() => setEditingStamp(null)} className="px-4 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors text-sm">放棄</button>
+                                <button onClick={handleSave} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold shadow-lg shadow-blue-500/20 transition-all">儲存</button>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center text-slate-500 p-10">
+                            <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4 shadow-inner">
+                                <StampIcon className="w-8 h-8 opacity-50" />
+                            </div>
+                            <p className="text-sm">請從左側選擇印章編輯，或建立新印章。</p>
+                        </div>
+                    )}
+                    
+                    {!editingStamp && (
+                        <div className="p-4 border-t border-slate-700 flex justify-end bg-slate-850 shrink-0 z-20">
+                            <button onClick={onClose} className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-bold transition-all">完成</button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 
 // --- Types for Merge Feature ---
 interface MergeFileData {
@@ -248,24 +577,28 @@ interface MergePageData {
     rotation: 0 | 90 | 180 | 270;
 }
 
-// --- Components for Merge Feature ---
-
 const FILE_COLORS = [
-    '#3B82F6', // Blue
-    '#10B981', // Green
-    '#F59E0B', // Yellow
     '#EF4444', // Red
-    '#8B5CF6', // Purple
-    '#EC4899', // Pink
+    '#F97316', // Orange
+    '#F59E0B', // Amber
+    '#10B981', // Emerald
+    '#3B82F6', // Blue
     '#6366F1', // Indigo
-    '#14B8A6', // Teal
+    '#8B5CF6', // Violet
+    '#EC4899', // Pink
 ];
+
+// --- Components for Merge Feature ---
+// (Merge feature components remain unchanged)
+
+// ... (FileSortModal and MergeSortPage components are kept as is) ...
 
 const FileSortModal: React.FC<{
     files: File[];
     onCancel: () => void;
     onConfirm: (sortedFiles: MergeFileData[]) => void;
 }> = ({ files, onCancel, onConfirm }) => {
+    // ... (No changes here)
     const [fileList, setFileList] = useState<MergeFileData[]>([]);
 
     useEffect(() => {
@@ -347,6 +680,7 @@ const MergeSortPage: React.FC<{
     onSave: (project: StoredProject) => void;
     onCancel: () => void;
 }> = ({ sortedFiles, onSave, onCancel }) => {
+    // ... (No changes here, kept for context)
     const [pages, setPages] = useState<MergePageData[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadingProgress, setLoadingProgress] = useState("");
@@ -574,7 +908,6 @@ const MergeSortPage: React.FC<{
 
 
 // --- Editor Page Component ---
-// (Existing types remain the same)
 type EditorTool = DrawingTool | 'move' | null;
 type Point = { x: number; y: number };
 type SelectionMode = 'view' | 'select';
@@ -589,7 +922,7 @@ type ActionState = {
 type CompressionLevel = 'high' | 'standard' | 'low';
 
 const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => {
-    // ... (Editor logic remains mostly same, just subtle style tweaks)
+    // ... (Editor logic)
     const fileInputRef = useRef<HTMLInputElement>(null);
     const objectImageInputRef = useRef<HTMLInputElement>(null);
 
@@ -650,7 +983,21 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const fileMenu = useDropdown();
     const rotateMenu = useDropdown();
     const splitMenu = useDropdown();
+    // Remove stampMenu as it is replaced by a modal
+    // const stampMenu = useDropdown(); 
+    const shapeMenu = useDropdown(); // Dropdown for shape tools on mobile
+
+    const [showStampSettings, setShowStampSettings] = useState(false);
+    const [showStampPicker, setShowStampPicker] = useState(false); // State for stamp picker modal
+    const [stamps, setStamps] = useState<StampConfig[]>([]);
+    const [activeStamp, setActiveStamp] = useState<StampConfig | null>(null);
     
+    // Toolbar dragging state for mobile
+    const [toolbarY, setToolbarY] = useState(50); // Percentage (50%)
+    const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
+    const toolbarDragStartY = useRef(0);
+    const toolbarInitialY = useRef(50);
+
     const viewedPage = state.pages.find(p => p.id === viewedPageId) || state.pages[0];
     const viewedPageIndex = state.pages.findIndex(p => p.id === viewedPageId);
     const selectedObject = viewedPage?.objects.find(o => o.id === selectedObjectId) || null;
@@ -666,6 +1013,52 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         if (compressLevel === 'low') ratio = 0.4;
         return currentProjectSize * ratio;
     };
+    
+     // --- Undo/Redo & State Updates ---
+    const canUndo = historyIndex > 0;
+    const canRedo = historyIndex < history.length - 1;
+
+    const handleUndo = () => {
+        if (canUndo) {
+            setHistoryIndex(prev => prev - 1);
+            setSelectedObjectId(null);
+        }
+    };
+
+    const handleRedo = () => {
+        if (canRedo) {
+            setHistoryIndex(prev => prev + 1);
+            setSelectedObjectId(null);
+        }
+    };
+
+    const updateState = (newState: EditorPageState, options: { keepSelection?: boolean } = {}) => {
+         const newHistory = history.slice(0, historyIndex + 1);
+         if (newHistory.length > 20) {
+             newHistory.shift();
+         }
+         newHistory.push(newState);
+         setHistory(newHistory);
+         setHistoryIndex(newHistory.length - 1);
+         setIsDirty(true);
+         if (!options.keepSelection) {
+            setSelectedObjectId(null);
+        }
+    };
+
+    useEffect(() => {
+        const loadStamps = () => {
+             const savedStamps = localStorage.getItem('pdf_editor_stamps');
+             if (savedStamps) {
+                 setStamps(JSON.parse(savedStamps));
+             }
+        };
+        loadStamps();
+        // Ref to listen to localStorage changes in other tabs or after modal close
+        const handleStorage = () => loadStamps();
+        window.addEventListener('storage', handleStorage);
+        return () => window.removeEventListener('storage', handleStorage);
+    }, [showStampSettings]); // Refresh when settings closed
 
     // Optimized URL Cache Logic
     useEffect(() => {
@@ -731,40 +1124,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         loadImages();
     }, [viewedPage]);
 
-    const updateState = (newState: EditorPageState, options: { keepSelection?: boolean } = {}) => {
-        const newHistory = history.slice(0, historyIndex + 1);
-        newHistory.push(newState);
-        while (newHistory.length > 11) {
-            newHistory.shift();
-        }
-        setHistory(newHistory);
-        setHistoryIndex(newHistory.length - 1);
-        setIsDirty(true);
-        if (!options.keepSelection) {
-            setSelectedObjectId(null);
-        }
-    };
-
-    // ... (Keep rest of logic: handleUndo, handleRedo, generatePdf, etc. unchanged)
-    const handleUndo = () => {
-        if (historyIndex > 0) {
-            setHistoryIndex(prevIndex => prevIndex - 1);
-            setSelectedObjectId(null);
-        }
-    };
-
-    const handleRedo = () => {
-        if (historyIndex < history.length - 1) {
-            setHistoryIndex(prevIndex => prevIndex + 1);
-            setSelectedObjectId(null);
-        }
-    };
-
-    const canUndo = historyIndex > 0;
-    const canRedo = historyIndex < history.length - 1;
-
+    // ... (State management, undo/redo, compression logic unchanged)
     const handleCompress = async () => {
-        setIsLoading(true);
+         // ... (existing compress logic)
+         setIsLoading(true);
         try {
             let scale = 1.0;
             let quality = 0.75;
@@ -833,10 +1196,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             setShowCompressModal(false);
         }
     };
-    
-    // ... (generatePdf logic is generic, omitted for brevity as it's unchanged)
+
     const createPdfBlob = async (pagesToExport: EditorPageState['pages']): Promise<Blob | null> => {
-        try {
+         // ... (existing PDF generation logic)
+         try {
             const pdfDoc = await PDFDocument.create();
             for (const page of pagesToExport) {
                 const tempCanvas = document.createElement('canvas');
@@ -913,7 +1276,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     };
 
     const generatePdf = async (pagesToExport: EditorPageState['pages'], filename: string) => {
-        setIsLoading(true);
+        // ... (existing generatePdf logic)
+         setIsLoading(true);
         try {
             const blob = await createPdfBlob(pagesToExport);
             if (!blob) { alert("產生 PDF 失敗。"); return false; }
@@ -923,8 +1287,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             return true;
         } catch (error) { console.error("Failed to generate PDF:", error); alert("產生 PDF 失敗。"); return false; } finally { setIsLoading(false); }
     };
-
-    // ... (Rest of handlers: handleSaveAndDownload, handleShare, handleAddPages, onObjectImageChange, onAddFilesChange, etc.)
+    
+    // ... (handlers: handleSaveAndDownload, handleShare, etc. unchanged)
     const handleSaveAndDownload = async () => {
         fileMenu.close();
         const projectToSave: StoredProject = { id: state.id, name: projectName, pages: state.pages, timestamp: Date.now() };
@@ -950,8 +1314,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             catch (err) { if ((err as Error).name !== 'AbortError') { console.error('Share failed:', err); alert('分享失敗，將為您下載檔案。'); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); } }
         } else { alert("您的瀏覽器不支援直接分享檔案，將為您下載檔案。"); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
     };
-
     const handleAddPages = () => { fileMenu.close(); fileInputRef.current?.click(); };
+
+    // ... (onObjectImageChange, onAddFilesChange unchanged)
     const onObjectImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
         if (!files || files.length === 0 || !targetObjectId || !viewedPageId) return;
@@ -1005,6 +1370,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         } catch (error) { console.error("Error adding pages:", error); alert("新增頁面失敗。"); } finally { setIsLoading(false); if (fileInputRef.current) { fileInputRef.current.value = ''; } }
     };
 
+    // ... (Page manipulation handlers unchanged)
     const togglePageSelection = (pageId: string) => {
         setSelectedPages(prev => {
             const newSelection = new Set(prev);
@@ -1079,13 +1445,28 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const handleZoomOut = () => setZoom(z => Math.max(z - 0.1, 0.2));
     const handleResetZoom = () => { setZoom(1); setPan({x: 0, y: 0}); };
     
-    const handlersRef = useRef({ handleSaveAndDownload, handleUndo, canUndo });
-    handlersRef.current = { handleSaveAndDownload, handleUndo, canUndo };
+    const handlersRef = useRef({ handleSaveAndDownload, handleUndo, canUndo, stamps });
+    handlersRef.current = { handleSaveAndDownload, handleUndo, canUndo, stamps };
+
+    const handleStampToolSelect = (stamp: StampConfig) => {
+        setActiveTool('stamp');
+        setActiveStamp(stamp);
+        setShowStampPicker(false);
+    };
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handlersRef.current.handleSaveAndDownload(); }
             if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); if (handlersRef.current.canUndo) { handlersRef.current.handleUndo(); } }
+            
+            // Stamp shortcuts
+            if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
+                const matchingStamp = handlersRef.current.stamps.find(s => s.shortcutKey === e.key.toLowerCase());
+                if (matchingStamp) {
+                    setActiveTool('stamp');
+                    setActiveStamp(matchingStamp);
+                }
+            }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
@@ -1110,6 +1491,29 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             const idx = state.pages.findIndex(p => p.id === viewedPageId);
              if (idx > 0) { const prevId = state.pages[idx - 1].id; setViewedPageId(prevId); lastScrollTime.current = now; scrollToThumbnail(prevId); }
         }
+    };
+
+    // Toolbar Drag Handlers for Mobile
+    const handleToolbarDragStart = (e: React.TouchEvent) => {
+        setIsDraggingToolbar(true);
+        toolbarDragStartY.current = e.touches[0].clientY;
+        toolbarInitialY.current = toolbarY;
+    };
+
+    const handleToolbarDragMove = (e: React.TouchEvent) => {
+        if (!isDraggingToolbar) return;
+        e.preventDefault(); // Prevent scrolling
+        const deltaY = e.touches[0].clientY - toolbarDragStartY.current;
+        const windowHeight = window.innerHeight;
+        const percentageDelta = (deltaY / windowHeight) * 100;
+        let newY = toolbarInitialY.current + percentageDelta;
+        // Constrain to typical screen bounds (e.g., 10% to 90%)
+        newY = Math.max(10, Math.min(90, newY));
+        setToolbarY(newY);
+    };
+
+    const handleToolbarDragEnd = () => {
+        setIsDraggingToolbar(false);
     };
 
     // --- Drawing Logic Wrappers (Reduced for brevity, but keeping all logic) ---
@@ -1202,8 +1606,24 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const endPoint = getCanvasCoordinates(e); const { type, startPoint } = actionState;
         let newObjects = [...(viewedPage?.objects || [])]; let changesMade = false;
         if (type === 'drawing' && startPoint && (startPoint.x !== endPoint.x || startPoint.y !== endPoint.y)) {
-            const newObject: EditorObject = { id: `obj_${Date.now()}`, type: activeTool as DrawingTool, sp: startPoint, ep: endPoint, color: activeTool === 'image-placeholder' ? '#FF69B4' : drawingColor, strokeWidth: strokeWidth, };
-            newObjects.push(newObject); changesMade = true;
+            if (activeTool === 'stamp' && activeStamp) {
+                const newObject: EditorObject = {
+                    id: `obj_${Date.now()}`,
+                    type: 'stamp',
+                    sp: startPoint,
+                    ep: endPoint,
+                    text: activeStamp.text,
+                    color: activeStamp.textColor,
+                    backgroundColor: activeStamp.backgroundColor,
+                    fontSize: activeStamp.fontSize,
+                    strokeWidth: 0, // No border by default
+                };
+                newObjects.push(newObject);
+                changesMade = true;
+            } else {
+                const newObject: EditorObject = { id: `obj_${Date.now()}`, type: activeTool as DrawingTool, sp: startPoint, ep: endPoint, color: activeTool === 'image-placeholder' ? '#FF69B4' : drawingColor, strokeWidth: strokeWidth, };
+                newObjects.push(newObject); changesMade = true;
+            }
         } else if ((type === 'moving' || type === 'resizing') && previewObject) { newObjects = newObjects.map(obj => obj.id === previewObject.id ? previewObject : obj); changesMade = true; }
         if (changesMade) { const newState = { ...state, pages: state.pages.map(p => p.id === viewedPageId ? { ...p, objects: newObjects } : p) }; updateState(newState, { keepSelection: true }); }
         setActionState({ type: 'idle' }); setPreviewObject(null);
@@ -1303,6 +1723,40 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     if (obj.backgroundColor && obj.backgroundColor !== 'transparent') { ctx.fillStyle = obj.backgroundColor; lines.forEach((line, index) => { const metrics = ctx.measureText(line); const textWidth = metrics.width; ctx.fillRect(sp.x, sp.y + (index * lineHeight), textWidth, lineHeight); }); }
                     ctx.fillStyle = obj.color || 'red'; lines.forEach((line, index) => { ctx.fillText(line, sp.x, sp.y + (index * lineHeight)); });
                 } break;
+            case 'stamp':
+                if (obj.text) {
+                    const x = Math.min(sp.x, ep.x); const y = Math.min(sp.y, ep.y); const w = Math.abs(ep.x - sp.x); const h = Math.abs(ep.y - sp.y);
+                    // Background
+                    if (obj.backgroundColor) {
+                        ctx.fillStyle = obj.backgroundColor;
+                        // Draw rounded rect for stamp
+                        const radius = 4 * scaleX;
+                        ctx.beginPath();
+                        ctx.moveTo(x + radius, y);
+                        ctx.lineTo(x + w - radius, y);
+                        ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+                        ctx.lineTo(x + w, y + h - radius);
+                        ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+                        ctx.lineTo(x + radius, y + h);
+                        ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+                        ctx.lineTo(x, y + radius);
+                        ctx.quadraticCurveTo(x, y, x + radius, y);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                    
+                    // Text
+                    ctx.fillStyle = obj.color || 'white';
+                    const size = (obj.fontSize || 24) * scaleY; 
+                    ctx.font = `bold ${size}px sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(obj.text, x + w / 2, y + h / 2);
+                    // Reset alignment
+                    ctx.textAlign = 'start';
+                    ctx.textBaseline = 'alphabetic';
+                }
+                break;
         }
     };
     
@@ -1339,6 +1793,16 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     <p className="text-white mt-6 text-lg font-medium tracking-wide">處理中...</p>
                 </div>
             )}
+
+            <StampSettingsModal isOpen={showStampSettings} onClose={() => setShowStampSettings(false)} />
+
+            <StampPickerModal 
+                isOpen={showStampPicker}
+                onClose={() => setShowStampPicker(false)}
+                stamps={stamps}
+                onSelect={handleStampToolSelect}
+                onManage={() => { setShowStampPicker(false); setShowStampSettings(true); }}
+            />
 
             {/* Compression Modal */}
             {showCompressModal && (
@@ -1435,6 +1899,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                          <CompressIcon className="w-4 h-4" /> 壓縮檔案
                                     </button>
                                     <div className="border-t border-slate-600 my-1"></div>
+                                     <button onClick={() => { fileMenu.close(); setShowStampSettings(true); }} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 flex items-center gap-2">
+                                         <StampIcon className="w-4 h-4" /> 設定印章
+                                    </button>
+                                    <div className="border-t border-slate-600 my-1"></div>
                                     <a href="#" onClick={(e) => { e.preventDefault(); handleSaveAndDownload(); }} className="flex items-center gap-2 px-4 py-2 text-sm text-white hover:bg-slate-600">
                                         <DownloadIcon className="w-4 h-4" /> 儲存並下載
                                     </a>
@@ -1489,11 +1957,23 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 </div>
 
                 {/* Toolbar */}
-                <div className={`
+                <div 
+                    style={{ top: `${toolbarY}%` }}
+                    className={`
                     z-30 transition-all
-                    fixed right-2 top-1/2 -translate-y-1/2 flex flex-col gap-4 bg-slate-800/90 p-2 rounded-2xl shadow-2xl backdrop-blur-md max-h-[70vh] overflow-y-auto no-scrollbar border border-slate-600/50
+                    fixed right-2 -translate-y-1/2 flex flex-col gap-4 bg-slate-800/90 p-2 rounded-2xl shadow-2xl backdrop-blur-md max-h-[70vh] overflow-y-auto no-scrollbar border border-slate-600/50
                     md:static md:flex-row md:translate-y-0 md:bg-slate-900/30 md:shadow-none md:p-2 md:h-auto md:w-full md:justify-center md:overflow-visible md:border-0
                 `}>
+                    {/* Mobile Drag Handle */}
+                    <div 
+                        className="md:hidden flex justify-center cursor-ns-resize py-1 -mt-2 mb-1"
+                        onTouchStart={handleToolbarDragStart}
+                        onTouchMove={handleToolbarDragMove}
+                        onTouchEnd={handleToolbarDragEnd}
+                    >
+                        <div className="w-8 h-1 bg-slate-600 rounded-full opacity-50"></div>
+                    </div>
+
                     <div className="flex flex-col md:flex-row items-center gap-3 md:gap-4">
                         <div className="flex md:flex-row flex-col items-center gap-1 border-b md:border-b-0 md:border-r border-slate-600 pb-2 md:pb-0 md:pr-3 w-full md:w-auto justify-center">
                             <button onClick={handleUndo} disabled={!canUndo} className="p-2 hover:bg-slate-700 rounded-full disabled:opacity-30 transition-colors text-slate-300" title="上一步 (Ctrl+Z)">
@@ -1506,20 +1986,52 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
                         <div className="flex md:flex-row flex-col items-center gap-2">
                             <button onClick={() => setActiveTool('move')} title="移動" className={`p-2 rounded-full transition-all ${activeTool === 'move' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <HandIcon className="w-5 h-5" /> </button>
-                            <button onClick={() => setActiveTool('line')} title="直線" className={`p-2 rounded-full transition-all ${activeTool === 'line' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <LineIcon className="w-5 h-5" /> </button>
-                            <button onClick={() => setActiveTool('arrow')} title="箭頭" className={`p-2 rounded-full transition-all ${activeTool === 'arrow' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <ArrowIcon className="w-5 h-5" /> </button>
-                            <button onClick={() => setActiveTool('rect')} title="方形" className={`p-2 rounded-full transition-all ${activeTool === 'rect' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <RectIcon className="w-5 h-5" /> </button>
-                            <button onClick={() => setActiveTool('circle')} title="圓形" className={`p-2 rounded-full transition-all ${activeTool === 'circle' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <CircleIcon className="w-5 h-5" /> </button>
+                            
+                            {/* Desktop Shape Tools */}
+                            <div className="hidden md:flex items-center gap-2">
+                                <button onClick={() => setActiveTool('line')} title="直線" className={`p-2 rounded-full transition-all ${activeTool === 'line' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <LineIcon className="w-5 h-5" /> </button>
+                                <button onClick={() => setActiveTool('arrow')} title="箭頭" className={`p-2 rounded-full transition-all ${activeTool === 'arrow' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <ArrowIcon className="w-5 h-5" /> </button>
+                                <button onClick={() => setActiveTool('rect')} title="方形" className={`p-2 rounded-full transition-all ${activeTool === 'rect' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <RectIcon className="w-5 h-5" /> </button>
+                                <button onClick={() => setActiveTool('circle')} title="圓形" className={`p-2 rounded-full transition-all ${activeTool === 'circle' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <CircleIcon className="w-5 h-5" /> </button>
+                            </div>
+
+                            {/* Mobile Shape Menu (Accordion) */}
+                            <div className="md:hidden flex flex-col items-center gap-2 w-full relative transition-all" ref={shapeMenu.ref}>
+                                <button 
+                                    onClick={shapeMenu.toggle} 
+                                    title="繪圖工具" 
+                                    className={`p-2 rounded-full transition-all ${['line', 'arrow', 'rect', 'circle'].includes(activeTool || '') ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}
+                                > 
+                                    <PenIcon className="w-5 h-5" /> 
+                                </button>
+                                {shapeMenu.isOpen && (
+                                    <div className="flex flex-col gap-2 bg-slate-700/50 p-2 rounded-xl w-full items-center animate-fade-in border border-slate-600/30">
+                                         <button onClick={() => { setActiveTool('line'); shapeMenu.close(); }} title="直線" className={`p-2 rounded-full transition-all ${activeTool === 'line' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-600'}`}> <LineIcon className="w-5 h-5" /> </button>
+                                         <button onClick={() => { setActiveTool('arrow'); shapeMenu.close(); }} title="箭頭" className={`p-2 rounded-full transition-all ${activeTool === 'arrow' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-600'}`}> <ArrowIcon className="w-5 h-5" /> </button>
+                                         <button onClick={() => { setActiveTool('rect'); shapeMenu.close(); }} title="方形" className={`p-2 rounded-full transition-all ${activeTool === 'rect' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-600'}`}> <RectIcon className="w-5 h-5" /> </button>
+                                         <button onClick={() => { setActiveTool('circle'); shapeMenu.close(); }} title="圓形" className={`p-2 rounded-full transition-all ${activeTool === 'circle' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-600'}`}> <CircleIcon className="w-5 h-5" /> </button>
+                                    </div>
+                                )}
+                            </div>
+
                             <button onClick={() => setActiveTool('text')} title="文字" className={`p-2 rounded-full transition-all ${activeTool === 'text' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <TextIcon className="w-5 h-5" /> </button>
                             <button onClick={() => setActiveTool('image-placeholder')} title="疊加圖片" className={`p-2 rounded-full transition-all ${activeTool === 'image-placeholder' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <ImageIcon className="w-5 h-5" /> </button>
+                            
+                            <button 
+                                onClick={() => setShowStampPicker(true)}
+                                title="印章" 
+                                className={`p-2 rounded-full transition-all ${activeTool === 'stamp' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}
+                            > 
+                                <StampIcon className="w-5 h-5" /> 
+                            </button>
                         </div>
                         
                         {isDrawingToolActive && (
                             <div className="flex md:flex-row flex-col items-center gap-3 pt-2 md:pt-0 md:pl-3 border-t md:border-t-0 md:border-l border-slate-600 w-full md:w-auto">
-                                {activeTool !== 'image-placeholder' && (
+                                {activeTool !== 'image-placeholder' && activeTool !== 'stamp' && (
                                      <input type="color" value={drawingColor} onChange={(e) => setDrawingColor(e.target.value)} className="w-8 h-8 rounded-full bg-transparent cursor-pointer border-none p-0 overflow-hidden ring-2 ring-slate-600" />
                                 )}
-                                {activeTool !== 'text' && (
+                                {activeTool !== 'text' && activeTool !== 'stamp' && (
                                      <div className="flex md:flex-row flex-col items-center gap-1">
                                         {[2, 5, 10].map(width => (
                                             <button key={width} onClick={() => setStrokeWidth(width)} className={`w-6 h-6 flex items-center justify-center rounded-full transition-colors ${strokeWidth === width ? 'bg-slate-500' : 'hover:bg-slate-700'}`}>
@@ -1604,6 +2116,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
                 {/* Right Column */}
                 <div className="flex flex-col flex-1 min-w-0 relative bg-slate-900">
+                    {/* ... (Thumbnail container code remains same) */}
                     <div 
                         ref={thumbnailContainerRef}
                         className="md:hidden bg-slate-800 border-b border-slate-700 h-24 flex items-center px-4 gap-3 overflow-x-auto no-scrollbar flex-shrink-0 relative z-30 shadow-md"
@@ -1719,6 +2232,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 const App: React.FC = () => {
   const [view, setView] = useState<'home' | 'editor' | 'merge-sort'>('home');
   const [projects, setProjects] = useState<ProjectMetadata[]>([]);
+  // ... (App component logic remains largely unchanged)
   const [currentProject, setCurrentProject] = useState<StoredProject | null>(null);
   const [isAppLoading, setIsAppLoading] = useState(false);
   

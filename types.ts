@@ -7,7 +7,17 @@ export interface ProjectMetadata {
   fileSize?: number;
 }
 
-export type DrawingTool = 'line' | 'arrow' | 'rect' | 'circle' | 'text' | 'image-placeholder';
+export type DrawingTool = 'line' | 'arrow' | 'rect' | 'circle' | 'text' | 'image-placeholder' | 'stamp';
+
+export interface StampConfig {
+    id: string;
+    name: string; // For display in menu
+    text: string;
+    textColor: string;
+    backgroundColor: string;
+    fontSize: number;
+    shortcutKey: string; // Single char or key code
+}
 
 export interface EditorObject {
   id: string;
@@ -21,6 +31,8 @@ export interface EditorObject {
   fontFamily?: string;
   fontSize?: number;
   imageData?: Blob; // For image-placeholder
+  // Specific for stamps
+  isStamp?: boolean;
 }
 
 export interface PageData {
