@@ -17,8 +17,13 @@ mkdir docs
 echo "🚚 Copying build output to docs directory..."
 cp -r dist/* docs/
 
-# Step 4: Create .nojekyll file to disable Jekyll on GitHub Pages
-echo "📄 Creating .nojekyll file..."
+# Step 4: Copy PWA files to docs
+echo "📄 Copying PWA essential files (service-worker.js, manifest.json)..."
+cp service-worker.js docs/
+cp manifest.json docs/
+
+# Step 5: Create .nojekyll file to disable Jekyll on GitHub Pages
+echo "🚫 Creating .nojekyll file..."
 touch docs/.nojekyll
 
 echo "✅ Deployment build is complete and ready in the 'docs' folder."
