@@ -182,6 +182,11 @@ const CompressIcon: React.FC<{ className?: string }> = ({ className }) => (
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
     </svg>
 );
+const CursorTextIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 16h10M12 8v8" />
+    </svg>
+);
 
 
 // --- Dexie DB Service ---
@@ -2130,6 +2135,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
                         <div className="flex md:flex-row flex-col items-center gap-2">
                             <button onClick={() => setActiveTool('move')} title="移動" className={`p-2 rounded-full transition-all ${activeTool === 'move' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <HandIcon className="w-5 h-5" /> </button>
+                            <button onClick={() => setActiveTool('select-text' as any)} title="選取文字" className={`p-2 rounded-full transition-all ${activeTool === 'select-text' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <CursorTextIcon className="w-5 h-5" /> </button>
 
                             {/* Desktop Shape Tools */}
                             <div className="hidden md:flex items-center gap-2">
@@ -2327,7 +2333,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                     )}
                                     <canvas
                                         ref={canvasRef}
-                                        className={`absolute top-0 left-0 pointer-events-auto z-10`}
+                                        className={`absolute top-0 left-0 z-10 ${activeTool === 'select-text' ? 'pointer-events-none' : 'pointer-events-auto'}`}
                                         style={{ transform: `rotate(${viewedPage.rotation}deg)` }}
                                         onMouseDown={handleCanvasMouseDown}
                                         onMouseMove={handleCanvasMouseMove}
