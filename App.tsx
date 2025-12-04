@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import Dexie, { type Table } from 'dexie';
+import PDFPageView from './PDFPageView';
 import { ProjectMetadata, StoredProject, EditorPageProps, EditorPageState, CompressionQuality, EditorObject, DrawingTool, PageData, StampConfig } from './types';
 
 // Configure the PDF.js worker
@@ -9,36 +10,36 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://esm.sh/pdfjs-dist@4.4.168/buil
 
 // --- Helper Functions ---
 const formatBytes = (bytes: number = 0, decimals = 2) => {
-  if (!+bytes) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+    if (!+bytes) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 };
 
 const formatDate = (timestamp: number) => {
-  return new Date(timestamp).toLocaleString('zh-TW', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  });
+    return new Date(timestamp).toLocaleString('zh-TW', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    });
 };
 
 
 // --- Icons ---
 const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-  </svg>
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+    </svg>
 );
 const MinusIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-  </svg>
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+    </svg>
 );
 const FolderOpenIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -57,10 +58,10 @@ const EyeIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 const CheckSquareIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 11l3 3L22 4" />
-    <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-  </svg>
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 11l3 3L22 4" />
+        <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+    </svg>
 );
 // Toolbar Icons
 const UndoIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -99,14 +100,14 @@ const PointerIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 const HandIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
-  </svg>
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+    </svg>
 );
 const ShareIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-  </svg>
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+    </svg>
 );
 const LineIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -115,7 +116,7 @@ const LineIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 const ArrowIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 12l-7-7m7 7l-7 7m7-7H5" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 12l-7-7m7 7l-7 7m7-7H5" />
     </svg>
 );
 const RectIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -140,8 +141,8 @@ const ImageIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 const StampIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11.5 17.914a1 1 0 00-.293.707V19a1 1 0 01-1 1h-1a1 1 0 01-1-1v-3a1 1 0 00-.293-.707L7.5 14.5" opacity="0.5" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11.5 17.914a1 1 0 00-.293.707V19a1 1 0 01-1 1h-1a1 1 0 01-1-1v-3a1 1 0 00-.293-.707L7.5 14.5" opacity="0.5" />
     </svg>
 );
 const PenIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -151,10 +152,10 @@ const PenIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 const ResetZoomIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-    <circle cx="12" cy="12" r="9" />
-    <text x="12" y="15" textAnchor="middle" fontSize="8" fill="currentColor" stroke="none" fontWeight="bold">100</text>
-  </svg>
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <text x="12" y="15" textAnchor="middle" fontSize="8" fill="currentColor" stroke="none" fontWeight="bold">100</text>
+    </svg>
 );
 const MergeIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -163,7 +164,7 @@ const MergeIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 const DragHandleIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
     </svg>
 );
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -196,13 +197,16 @@ db.version(1).stores({
 const dbService = {
     getProjectsMetadata: async (): Promise<ProjectMetadata[]> => {
         const projects = await db.projects.orderBy('timestamp').reverse().toArray();
-        return projects.map(({ id, name, timestamp, pages, fileSize }) => ({
+        return projects.map(({ id, name, timestamp, pages, fileSize, pdfAssets }) => ({
             id,
             name,
             timestamp,
             pageCount: pages.length,
             // If fileSize is missing (old data), calculate it roughly from blobs
-            fileSize: fileSize ?? pages.reduce((acc, page) => acc + page.data.size, 0)
+            fileSize: fileSize ?? (
+                (pdfAssets ? Object.values(pdfAssets).reduce((acc, blob) => acc + blob.size, 0) : 0) +
+                pages.reduce((acc, page: any) => acc + (page.source ? (page.source.type === 'image' ? page.source.data.size : 0) : (page.data ? page.data.size : 0)), 0)
+            )
         }));
     },
     getProjectData: (id: string): Promise<StoredProject | undefined> => {
@@ -210,8 +214,9 @@ const dbService = {
     },
     saveProject: (project: StoredProject): Promise<string> => {
         // Calculate file size on save
-        const size = project.pages.reduce((acc, page) => acc + page.data.size, 0);
-        project.fileSize = size;
+        const pdfSize = project.pdfAssets ? Object.values(project.pdfAssets).reduce((acc, blob) => acc + blob.size, 0) : 0;
+        const pageSize = project.pages.reduce((acc, page: any) => acc + (page.source ? (page.source.type === 'image' ? page.source.data.size : 0) : (page.data ? page.data.size : 0)), 0);
+        project.fileSize = pdfSize + pageSize;
         return db.projects.put(project);
     },
     deleteProject: (id: string): Promise<void> => {
@@ -262,7 +267,7 @@ const StampPickerModal: React.FC<{
                         <XIcon className="w-5 h-5" />
                     </button>
                 </div>
-                
+
                 <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
                     {stamps.length === 0 ? (
                         <div className="text-center py-8 text-slate-500">
@@ -270,7 +275,7 @@ const StampPickerModal: React.FC<{
                                 <StampIcon className="w-12 h-12 mx-auto" />
                             </div>
                             <p>尚未設定任何印章</p>
-                            <button 
+                            <button
                                 onClick={onManage}
                                 className="mt-4 text-blue-400 hover:text-blue-300 underline text-sm"
                             >
@@ -285,10 +290,10 @@ const StampPickerModal: React.FC<{
                                     onClick={() => { onSelect(stamp); onClose(); }}
                                     className="flex flex-col items-center p-3 rounded-xl bg-slate-700/50 hover:bg-slate-700 border border-slate-600 hover:border-blue-500 transition-all group h-full"
                                 >
-                                    <div 
+                                    <div
                                         className="px-3 py-1.5 rounded shadow-sm mb-2 flex items-center justify-center text-xs font-bold w-full overflow-hidden whitespace-nowrap"
-                                        style={{ 
-                                            color: stamp.textColor, 
+                                        style={{
+                                            color: stamp.textColor,
                                             backgroundColor: stamp.backgroundColor,
                                             minHeight: '30px'
                                         }}
@@ -302,9 +307,9 @@ const StampPickerModal: React.FC<{
                         </div>
                     )}
                 </div>
-                
+
                 <div className="p-4 border-t border-slate-700 bg-slate-800/50">
-                     <button 
+                    <button
                         onClick={onManage}
                         className="w-full py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition-colors flex items-center justify-center gap-2"
                     >
@@ -335,13 +340,13 @@ const StampSettingsModal: React.FC<{
     useEffect(() => {
         // When stamps change, save to local storage
         if (stamps.length > 0 || localStorage.getItem('pdf_editor_stamps')) {
-             localStorage.setItem('pdf_editor_stamps', JSON.stringify(stamps));
+            localStorage.setItem('pdf_editor_stamps', JSON.stringify(stamps));
         }
     }, [stamps]);
 
     const handleSave = () => {
         if (!editingStamp) return;
-        
+
         // Basic validation
         if (!editingStamp.text) {
             alert("請輸入印章文字");
@@ -400,7 +405,7 @@ const StampSettingsModal: React.FC<{
     return (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[70] backdrop-blur-sm p-4">
             <div className="bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 w-full max-w-4xl overflow-hidden flex flex-col md:flex-row max-h-[85vh]">
-                
+
                 {/* Left Sidebar: Stamp List - Compact on mobile */}
                 <div className="w-full md:w-1/3 border-r border-slate-700 flex flex-col bg-slate-850 h-36 md:h-auto">
                     <div className="p-3 md:p-4 border-b border-slate-700 flex justify-between items-center sticky top-0 bg-slate-850 z-10">
@@ -411,8 +416,8 @@ const StampSettingsModal: React.FC<{
                     </div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
                         {stamps.map(stamp => (
-                            <div 
-                                key={stamp.id} 
+                            <div
+                                key={stamp.id}
                                 onClick={() => setEditingStamp(stamp)}
                                 className={`p-2 md:p-3 rounded-xl border cursor-pointer flex items-center justify-between group transition-all ${editingStamp?.id === stamp.id ? 'bg-slate-700 border-blue-500' : 'bg-slate-800 border-slate-700 hover:border-slate-600'}`}
                             >
@@ -430,9 +435,9 @@ const StampSettingsModal: React.FC<{
                                 </button>
                             </div>
                         ))}
-                         {stamps.length === 0 && (
-                             <div className="text-center text-slate-500 py-8 text-sm">尚未建立印章</div>
-                         )}
+                        {stamps.length === 0 && (
+                            <div className="text-center text-slate-500 py-8 text-sm">尚未建立印章</div>
+                        )}
                     </div>
                 </div>
 
@@ -442,15 +447,15 @@ const StampSettingsModal: React.FC<{
                         <>
                             <div className="p-4 md:p-6 flex-1 overflow-y-auto custom-scrollbar">
                                 <h3 className="text-lg font-bold text-white mb-4 md:mb-6 hidden md:block">編輯印章</h3>
-                                
+
                                 <div className="grid gap-4 md:gap-6">
                                     {/* Preview */}
                                     <div className="flex flex-col items-center justify-center p-4 bg-slate-800/50 rounded-xl border border-slate-700 border-dashed shrink-0">
                                         <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider font-semibold">預覽</p>
-                                        <div 
+                                        <div
                                             className="px-6 py-3 rounded-lg shadow-lg flex items-center justify-center"
-                                            style={{ 
-                                                color: editingStamp.textColor, 
+                                            style={{
+                                                color: editingStamp.textColor,
                                                 backgroundColor: editingStamp.backgroundColor,
                                                 fontSize: `${editingStamp.fontSize}px`,
                                                 minWidth: '100px',
@@ -465,29 +470,29 @@ const StampSettingsModal: React.FC<{
                                     <div className="grid grid-cols-2 gap-3 md:gap-4">
                                         <div className="col-span-1">
                                             <label className="block text-xs text-slate-400 mb-1.5 font-medium">名稱</label>
-                                            <input 
-                                                type="text" 
-                                                value={editingStamp.name} 
-                                                onChange={e => setEditingStamp({...editingStamp, name: e.target.value})}
+                                            <input
+                                                type="text"
+                                                value={editingStamp.name}
+                                                onChange={e => setEditingStamp({ ...editingStamp, name: e.target.value })}
                                                 className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                                             />
                                         </div>
                                         <div className="col-span-1">
                                             <label className="block text-xs text-slate-400 mb-1.5 font-medium">文字</label>
-                                            <input 
-                                                type="text" 
-                                                value={editingStamp.text} 
-                                                onChange={e => setEditingStamp({...editingStamp, text: e.target.value})}
+                                            <input
+                                                type="text"
+                                                value={editingStamp.text}
+                                                onChange={e => setEditingStamp({ ...editingStamp, text: e.target.value })}
                                                 className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                                             />
                                         </div>
                                         <div>
                                             <label className="block text-xs text-slate-400 mb-1.5 font-medium">文字顏色</label>
                                             <div className="flex items-center gap-2">
-                                                <input 
-                                                    type="color" 
-                                                    value={editingStamp.textColor} 
-                                                    onChange={e => setEditingStamp({...editingStamp, textColor: e.target.value})}
+                                                <input
+                                                    type="color"
+                                                    value={editingStamp.textColor}
+                                                    onChange={e => setEditingStamp({ ...editingStamp, textColor: e.target.value })}
                                                     className="h-9 w-full bg-slate-800 border border-slate-700 rounded cursor-pointer p-1"
                                                 />
                                             </div>
@@ -495,29 +500,29 @@ const StampSettingsModal: React.FC<{
                                         <div>
                                             <label className="block text-xs text-slate-400 mb-1.5 font-medium">背景顏色</label>
                                             <div className="flex items-center gap-2">
-                                                <input 
-                                                    type="color" 
-                                                    value={editingStamp.backgroundColor} 
-                                                    onChange={e => setEditingStamp({...editingStamp, backgroundColor: e.target.value})}
+                                                <input
+                                                    type="color"
+                                                    value={editingStamp.backgroundColor}
+                                                    onChange={e => setEditingStamp({ ...editingStamp, backgroundColor: e.target.value })}
                                                     className="h-9 w-full bg-slate-800 border border-slate-700 rounded cursor-pointer p-1"
                                                 />
                                             </div>
                                         </div>
                                         <div>
                                             <label className="block text-xs text-slate-400 mb-1.5 font-medium">大小 ({editingStamp.fontSize}px)</label>
-                                            <input 
-                                                type="range" 
-                                                min="12" 
-                                                max="72" 
-                                                value={editingStamp.fontSize} 
-                                                onChange={e => setEditingStamp({...editingStamp, fontSize: parseInt(e.target.value)})}
+                                            <input
+                                                type="range"
+                                                min="12"
+                                                max="72"
+                                                value={editingStamp.fontSize}
+                                                onChange={e => setEditingStamp({ ...editingStamp, fontSize: parseInt(e.target.value) })}
                                                 className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500 mt-3"
                                             />
                                         </div>
                                         <div>
                                             <label className="block text-xs text-slate-400 mb-1.5 font-medium">快捷鍵</label>
                                             <div className="flex gap-2">
-                                                <button 
+                                                <button
                                                     onClick={() => setIsRecordingKey(true)}
                                                     onKeyDown={handleKeyDown}
                                                     className={`flex-1 bg-slate-800 border ${isRecordingKey ? 'border-blue-500 ring-1 ring-blue-500 text-blue-400' : 'border-slate-700 text-slate-300'} rounded-lg px-2 py-2 text-xs text-center focus:outline-none truncate`}
@@ -525,7 +530,7 @@ const StampSettingsModal: React.FC<{
                                                     {isRecordingKey ? "按下按鍵" : (editingStamp.shortcutKey ? `${editingStamp.shortcutKey}` : "設定")}
                                                 </button>
                                                 {editingStamp.shortcutKey && (
-                                                    <button onClick={() => setEditingStamp({...editingStamp, shortcutKey: ''})} className="p-2 text-slate-500 hover:text-red-400 bg-slate-800 border border-slate-700 rounded-lg">
+                                                    <button onClick={() => setEditingStamp({ ...editingStamp, shortcutKey: '' })} className="p-2 text-slate-500 hover:text-red-400 bg-slate-800 border border-slate-700 rounded-lg">
                                                         <XIcon className="w-4 h-4" />
                                                     </button>
                                                 )}
@@ -547,7 +552,7 @@ const StampSettingsModal: React.FC<{
                             <p className="text-sm">請從左側選擇印章編輯，或建立新印章。</p>
                         </div>
                     )}
-                    
+
                     {!editingStamp && (
                         <div className="p-4 border-t border-slate-700 flex justify-end bg-slate-850 shrink-0 z-20">
                             <button onClick={onClose} className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-bold transition-all">完成</button>
@@ -630,20 +635,20 @@ const FileSortModal: React.FC<{
                     <h2 className="text-xl font-bold text-white">合併設定：文件排序</h2>
                     <p className="text-sm text-slate-400 mt-1">請調整文件順序，並設定顏色以識別。</p>
                 </div>
-                
+
                 <div className="overflow-y-auto flex-1 p-4 space-y-2 custom-scrollbar">
                     {fileList.map((item, index) => (
                         <div key={item.id} className="flex items-center bg-slate-700/50 p-3 rounded-xl border border-slate-600/50 hover:border-slate-500 transition-colors">
                             <div className="flex flex-col gap-1 mr-3">
-                                <button 
-                                    onClick={() => moveFile(index, -1)} 
+                                <button
+                                    onClick={() => moveFile(index, -1)}
                                     disabled={index === 0}
                                     className="text-slate-400 hover:text-white disabled:opacity-20 transition-colors"
                                 >
                                     ▲
                                 </button>
-                                <button 
-                                    onClick={() => moveFile(index, 1)} 
+                                <button
+                                    onClick={() => moveFile(index, 1)}
                                     disabled={index === fileList.length - 1}
                                     className="text-slate-400 hover:text-white disabled:opacity-20 transition-colors"
                                 >
@@ -655,9 +660,9 @@ const FileSortModal: React.FC<{
                                 <p className="text-xs text-slate-500">{formatBytes(item.file.size)}</p>
                             </div>
                             <div className="flex items-center ml-3">
-                                <input 
-                                    type="color" 
-                                    value={item.color} 
+                                <input
+                                    type="color"
+                                    value={item.color}
                                     onChange={(e) => changeColor(item.id, e.target.value)}
                                     className="w-8 h-8 rounded-full cursor-pointer bg-transparent border-none overflow-hidden"
                                 />
@@ -692,33 +697,33 @@ const MergeSortPage: React.FC<{
         const processFiles = async () => {
             setLoading(true);
             const allPages: MergePageData[] = [];
-            
+
             try {
                 for (let fIdx = 0; fIdx < sortedFiles.length; fIdx++) {
                     const fileData = sortedFiles[fIdx];
                     setLoadingProgress(`正在處理檔案 (${fIdx + 1}/${sortedFiles.length}): ${fileData.name}`);
-                    
+
                     const arrayBuffer = await fileData.file.arrayBuffer();
                     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                    
+
                     for (let i = 1; i <= pdf.numPages; i++) {
                         const page = await pdf.getPage(i);
                         const viewport = page.getViewport({ scale: 1.0 }); // Thumbnail scale
                         const canvas = document.createElement('canvas');
                         const context = canvas.getContext('2d');
-                        if(!context) continue;
+                        if (!context) continue;
 
                         canvas.width = viewport.width;
                         canvas.height = viewport.height;
 
-                         const renderContext = {
+                        const renderContext = {
                             canvasContext: context,
                             viewport: viewport,
                             canvas: canvas, // Include canvas in renderContext for compatibility
                         };
                         await page.render(renderContext).promise;
-                        
-                        const blob = await new Promise<Blob | null>(resolve => 
+
+                        const blob = await new Promise<Blob | null>(resolve =>
                             canvas.toBlob(resolve, 'image/jpeg', CompressionQuality.NORMAL)
                         );
 
@@ -775,11 +780,11 @@ const MergeSortPage: React.FC<{
     const handleDragOver = (e: React.DragEvent, index: number) => {
         e.preventDefault();
         if (draggedIndex === null || draggedIndex === index) return;
-        
+
         const newPages = [...pages];
         const [draggedItem] = newPages.splice(draggedIndex, 1);
         newPages.splice(index, 0, draggedItem);
-        
+
         setPages(newPages);
         setDraggedIndex(index);
     };
@@ -787,13 +792,13 @@ const MergeSortPage: React.FC<{
     const handleFinish = () => {
         const projectPages: PageData[] = pages.map((p, idx) => ({
             id: `page_${Date.now()}_${idx}`, // Re-generate IDs for the clean project
-            data: p.data,
+            source: { type: 'image', data: p.data },
             rotation: p.rotation,
             objects: []
         }));
 
         // Calculate initial size
-        const totalSize = projectPages.reduce((acc, p) => acc + p.data.size, 0);
+        const totalSize = projectPages.reduce((acc, p) => acc + (p.source.type === 'image' ? p.source.data.size : 0), 0);
 
         const newProject: StoredProject = {
             id: `proj_merge_${Date.now()}`,
@@ -831,7 +836,7 @@ const MergeSortPage: React.FC<{
             <header className="bg-slate-800/80 backdrop-blur-md shadow-lg border-b border-slate-700 p-4 flex flex-col md:flex-row md:items-center justify-between sticky top-0 z-20 gap-4">
                 <div className="flex items-center gap-4">
                     <div className="p-2 bg-purple-500/20 rounded-lg">
-                         <MergeIcon className="w-6 h-6 text-purple-400 shrink-0" />
+                        <MergeIcon className="w-6 h-6 text-purple-400 shrink-0" />
                     </div>
                     <div className="min-w-0">
                         <h1 className="font-bold text-lg truncate">頁面排序與合併</h1>
@@ -839,9 +844,9 @@ const MergeSortPage: React.FC<{
                     </div>
                 </div>
                 <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full md:w-auto">
-                    <input 
-                        type="text" 
-                        value={projectName} 
+                    <input
+                        type="text"
+                        value={projectName}
                         onChange={(e) => setProjectName(e.target.value)}
                         className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm w-full md:w-64 focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all"
                         placeholder="專案名稱"
@@ -861,7 +866,7 @@ const MergeSortPage: React.FC<{
                 ) : (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
                         {pages.map((page, index) => (
-                            <div 
+                            <div
                                 key={page.id}
                                 draggable
                                 onDragStart={(e) => handleDragStart(e, index)}
@@ -872,9 +877,9 @@ const MergeSortPage: React.FC<{
                                 {/* Color Border Container */}
                                 <div className="p-2 rounded-t-lg border-4 border-b-0 bg-slate-750" style={{ borderColor: page.color }}>
                                     <div className="aspect-[3/4] bg-slate-700/50 flex items-center justify-center overflow-hidden relative rounded">
-                                        <img 
-                                            src={urlCache.get(page.id)} 
-                                            alt={`Page ${index + 1}`} 
+                                        <img
+                                            src={urlCache.get(page.id)}
+                                            alt={`Page ${index + 1}`}
                                             className="max-w-full max-h-full object-contain"
                                             style={{ transform: `rotate(${page.rotation}deg)` }}
                                         />
@@ -934,7 +939,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [pageUrlCache, setPageUrlCache] = useState<Map<string, string>>(new Map());
     // Ref to store valid URLs to prevent reloading image on every state change (like drawing)
     const activeUrlMap = useRef(new Map<string, string>());
-    
+
     // Cache for object images (the overlaid images)
     const loadedObjectImages = useRef<Map<string, HTMLImageElement>>(new Map());
     const [targetObjectId, setTargetObjectId] = useState<string | null>(null);
@@ -949,7 +954,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [viewedPageId, setViewedPageId] = useState<string | null>(state.pages[0]?.id || null);
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
-    
+
     // Compression State
     const [showCompressModal, setShowCompressModal] = useState(false);
     const [compressLevel, setCompressLevel] = useState<CompressionLevel>('standard');
@@ -971,7 +976,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [fontFamily, setFontFamily] = useState('sans-serif');
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const imageRef = useRef<HTMLImageElement>(null);
+    const backgroundRef = useRef<HTMLElement>(null);
     const textInputRef = useRef<HTMLTextAreaElement>(null);
     const thumbnailRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const desktopThumbnailRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -991,7 +996,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [showStampPicker, setShowStampPicker] = useState(false); // State for stamp picker modal
     const [stamps, setStamps] = useState<StampConfig[]>([]);
     const [activeStamp, setActiveStamp] = useState<StampConfig | null>(null);
-    
+
     // Toolbar dragging state for mobile
     const [toolbarY, setToolbarY] = useState(50); // Percentage (50%)
     const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
@@ -1004,8 +1009,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const isDrawingToolActive = activeTool && activeTool !== 'move';
 
     // Calculate Current Project Size from pages
-    const currentProjectSize = state.pages.reduce((acc, page) => acc + page.data.size, 0);
-    
+    const currentProjectSize = state.pages.reduce((acc, page) => acc + (page.source.type === 'image' ? page.source.data.size : 0), 0) + (state.pdfAssets ? Object.values(state.pdfAssets).reduce((acc, blob) => acc + blob.size, 0) : 0);
+
     // Estimate compressed size based on heuristic
     const getEstimatedSize = () => {
         let ratio = 0.7;
@@ -1013,8 +1018,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         if (compressLevel === 'low') ratio = 0.4;
         return currentProjectSize * ratio;
     };
-    
-     // --- Undo/Redo & State Updates ---
+
+    // --- Undo/Redo & State Updates ---
     const canUndo = historyIndex > 0;
     const canRedo = historyIndex < history.length - 1;
 
@@ -1033,25 +1038,25 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     };
 
     const updateState = (newState: EditorPageState, options: { keepSelection?: boolean } = {}) => {
-         const newHistory = history.slice(0, historyIndex + 1);
-         if (newHistory.length > 20) {
-             newHistory.shift();
-         }
-         newHistory.push(newState);
-         setHistory(newHistory);
-         setHistoryIndex(newHistory.length - 1);
-         setIsDirty(true);
-         if (!options.keepSelection) {
+        const newHistory = history.slice(0, historyIndex + 1);
+        if (newHistory.length > 20) {
+            newHistory.shift();
+        }
+        newHistory.push(newState);
+        setHistory(newHistory);
+        setHistoryIndex(newHistory.length - 1);
+        setIsDirty(true);
+        if (!options.keepSelection) {
             setSelectedObjectId(null);
         }
     };
 
     useEffect(() => {
         const loadStamps = () => {
-             const savedStamps = localStorage.getItem('pdf_editor_stamps');
-             if (savedStamps) {
-                 setStamps(JSON.parse(savedStamps));
-             }
+            const savedStamps = localStorage.getItem('pdf_editor_stamps');
+            if (savedStamps) {
+                setStamps(JSON.parse(savedStamps));
+            }
         };
         loadStamps();
         // Ref to listen to localStorage changes in other tabs or after modal close
@@ -1069,8 +1074,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         state.pages.forEach(page => {
             if (currentMap.has(page.id)) {
                 newMap.set(page.id, currentMap.get(page.id)!);
-            } else if (page.data instanceof Blob) {
-                const url = URL.createObjectURL(page.data);
+            } else if (page.source.type === 'image') {
+                const url = URL.createObjectURL(page.source.data);
                 newMap.set(page.id, url);
                 hasChanges = true;
             }
@@ -1087,7 +1092,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
         activeUrlMap.current = newMap;
         if (hasChanges) {
-             setPageUrlCache(new Map(newMap));
+            setPageUrlCache(new Map(newMap));
         }
     }, [state.pages]);
 
@@ -1096,7 +1101,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             activeUrlMap.current.forEach(url => URL.revokeObjectURL(url));
         };
     }, []);
-    
+
     useEffect(() => {
         if (!viewedPage) return;
         const loadImages = async () => {
@@ -1126,12 +1131,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     // ... (State management, undo/redo, compression logic unchanged)
     const handleCompress = async () => {
-         // ... (existing compress logic)
-         setIsLoading(true);
+        // ... (existing compress logic)
+        setIsLoading(true);
         try {
             let scale = 1.0;
             let quality = 0.75;
-            
+
             if (compressLevel === 'high') {
                 scale = 1.0;
                 quality = 0.85;
@@ -1144,11 +1149,13 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             }
 
             const newPages = [...state.pages];
-            
+
             for (let i = 0; i < newPages.length; i++) {
                 const page = newPages[i];
+                if (page.source.type !== 'image') continue; // Skip non-image pages for now
+
                 const img = new Image();
-                const url = URL.createObjectURL(page.data);
+                const url = URL.createObjectURL(page.source.data);
                 img.src = url;
                 await new Promise((resolve, reject) => {
                     img.onload = resolve;
@@ -1160,32 +1167,32 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 const targetHeight = Math.floor(img.naturalHeight * scale);
                 canvas.width = targetWidth;
                 canvas.height = targetHeight;
-                
+
                 const ctx = canvas.getContext('2d');
                 if (ctx) {
                     // High quality smoothing
                     ctx.imageSmoothingEnabled = true;
                     ctx.imageSmoothingQuality = 'high';
                     ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
-                    
-                    const blob = await new Promise<Blob | null>(resolve => 
+
+                    const blob = await new Promise<Blob | null>(resolve =>
                         canvas.toBlob(resolve, 'image/jpeg', quality)
                     );
-                    
+
                     if (blob) {
-                        newPages[i] = { ...page, data: blob };
+                        newPages[i] = { ...page, source: { type: 'image', data: blob } };
                     }
                 }
                 URL.revokeObjectURL(url);
             }
 
             updateState({ ...state, pages: newPages });
-            
+
             // Auto save after compression
             const projectToSave: StoredProject = { id: state.id, name: projectName, pages: newPages, timestamp: Date.now() };
             await onSave(projectToSave, projectName);
             setIsDirty(false);
-            setShowSaveSuccess(true); 
+            setShowSaveSuccess(true);
             setTimeout(() => setShowSaveSuccess(false), 2000);
 
         } catch (e) {
@@ -1197,75 +1204,199 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         }
     };
 
-    const createPdfBlob = async (pagesToExport: EditorPageState['pages']): Promise<Blob | null> => {
-         // ... (existing PDF generation logic)
-         try {
-            const pdfDoc = await PDFDocument.create();
-            for (const page of pagesToExport) {
-                const tempCanvas = document.createElement('canvas');
-                const tempCtx = tempCanvas.getContext('2d');
-                const img = new Image();
-                
-                const flattenedDataUrl = await new Promise<string>((resolve, reject) => {
-                    img.onload = async () => {
-                        tempCanvas.width = img.naturalWidth;
-                        tempCanvas.height = img.naturalHeight;
-                        tempCtx!.drawImage(img, 0, 0);
+    const hexToRgb = (hex: string) => {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? rgb(parseInt(result[1], 16) / 255, parseInt(result[2], 16) / 255, parseInt(result[3], 16) / 255) : rgb(0, 0, 0);
+    };
 
-                        const scaleX = 1; 
-                        const scaleY = 1; 
+    const drawVectorObject = async (page: any, obj: EditorObject, pageHeight: number, scale: number, font: any) => {
+        const transformY = (y: number) => pageHeight - (y / scale);
+        const s = (val: number) => val / scale;
+        const rgbColor = hexToRgb(obj.color || '#000000');
+        const thickness = s(obj.strokeWidth || 2);
 
-                        for (const obj of (page.objects || [])) {
-                            if (obj.type === 'image-placeholder' && obj.imageData) {
-                                try {
-                                    const objImg = new Image();
-                                    const objUrl = URL.createObjectURL(obj.imageData);
-                                    objImg.src = objUrl;
-                                    await new Promise((r, rej) => {
-                                        objImg.onload = r;
-                                        objImg.onerror = rej;
-                                    });
-                                    const sp = { x: obj.sp.x * scaleX, y: obj.sp.y * scaleY };
-                                    const ep = { x: obj.ep.x * scaleX, y: obj.ep.y * scaleY };
-                                    const x = Math.min(sp.x, ep.x);
-                                    const y = Math.min(sp.y, ep.y);
-                                    const w = Math.abs(sp.x - ep.x);
-                                    const h = Math.abs(sp.y - ep.y);
-                                    tempCtx!.drawImage(objImg, x, y, w, h);
-                                    tempCtx!.strokeStyle = '#FF69B4';
-                                    tempCtx!.lineWidth = (obj.strokeWidth || 2) * scaleX;
-                                    tempCtx!.strokeRect(x, y, w, h);
-                                    URL.revokeObjectURL(objUrl);
-                                } catch (e) {
-                                    console.error("Failed to render object image in PDF", e);
-                                }
-                            } else {
-                                drawObject(tempCtx!, obj, { scaleX, scaleY });
-                            }
-                        }
-                        resolve(tempCanvas.toDataURL('image/jpeg', 0.92));
-                    };
-                    img.onerror = () => reject(new Error('Image failed to load for PDF generation'));
-                    const pageUrl = pageUrlCache.get(page.id);
-                    if (!pageUrl) {
-                        reject(new Error(`Could not find URL for page ${page.id}`));
-                        return;
-                    }
-                    img.src = pageUrl;
+        if (obj.type === 'line') {
+            page.drawLine({ start: { x: s(obj.sp.x), y: transformY(obj.sp.y) }, end: { x: s(obj.ep.x), y: transformY(obj.ep.y) }, color: rgbColor, thickness });
+        } else if (obj.type === 'arrow') {
+            const start = { x: s(obj.sp.x), y: transformY(obj.sp.y) };
+            const end = { x: s(obj.ep.x), y: transformY(obj.ep.y) };
+            page.drawLine({ start, end, color: rgbColor, thickness });
+
+            const headLenScaled = s(Math.max(15, (obj.strokeWidth || 2) * 3));
+            const angleCanvas = Math.atan2(obj.ep.y - obj.sp.y, obj.ep.x - obj.sp.x);
+
+            const p1 = {
+                x: obj.ep.x - headLenScaled * scale * Math.cos(angleCanvas - Math.PI / 6),
+                y: obj.ep.y - headLenScaled * scale * Math.sin(angleCanvas - Math.PI / 6)
+            };
+            const p2 = {
+                x: obj.ep.x - headLenScaled * scale * Math.cos(angleCanvas + Math.PI / 6),
+                y: obj.ep.y - headLenScaled * scale * Math.sin(angleCanvas + Math.PI / 6)
+            };
+
+            page.drawPolygon({
+                points: [
+                    { x: s(obj.ep.x), y: transformY(obj.ep.y) },
+                    { x: s(p1.x), y: transformY(p1.y) },
+                    { x: s(p2.x), y: transformY(p2.y) }
+                ],
+                color: rgbColor,
+                borderColor: rgbColor,
+                borderWidth: 0,
+            });
+        } else if (obj.type === 'rect') {
+            const x = Math.min(obj.sp.x, obj.ep.x);
+            const y = Math.min(obj.sp.y, obj.ep.y);
+            const w = Math.abs(obj.ep.x - obj.sp.x);
+            const h = Math.abs(obj.ep.y - obj.sp.y);
+            page.drawRectangle({
+                x: s(x),
+                y: transformY(y + h),
+                width: s(w),
+                height: s(h),
+                borderColor: rgbColor,
+                borderWidth: thickness,
+            });
+        } else if (obj.type === 'circle') {
+            const radiusX = Math.abs(obj.ep.x - obj.sp.x) / 2;
+            const radiusY = Math.abs(obj.ep.y - obj.sp.y) / 2;
+            const centerX = Math.min(obj.sp.x, obj.ep.x) + radiusX;
+            const centerY = Math.min(obj.sp.y, obj.ep.y) + radiusY;
+            page.drawEllipse({
+                x: s(centerX),
+                y: transformY(centerY),
+                xScale: s(radiusX),
+                yScale: s(radiusY),
+                borderColor: rgbColor,
+                borderWidth: thickness,
+            });
+        } else if (obj.type === 'text' && obj.text) {
+            const size = s(obj.fontSize || 16);
+            const lines = obj.text.split('\n');
+            const lineHeight = size * 1.2;
+
+            if (obj.backgroundColor && obj.backgroundColor !== 'transparent') {
+                let maxWidth = 0;
+                lines.forEach((line: string) => {
+                    const width = font.widthOfTextAtSize(line, size);
+                    if (width > maxWidth) maxWidth = width;
                 });
+                const totalHeight = lines.length * lineHeight;
+                const bgRgb = hexToRgb(obj.backgroundColor);
+                page.drawRectangle({
+                    x: s(obj.sp.x),
+                    y: transformY(obj.sp.y) - totalHeight,
+                    width: maxWidth,
+                    height: totalHeight,
+                    color: bgRgb,
+                });
+            }
 
-                const imageBytes = await fetch(flattenedDataUrl).then(res => res.arrayBuffer());
-                const image = await pdfDoc.embedJpg(imageBytes);
-                const { width, height } = image;
-                const isRotated = page.rotation === 90 || page.rotation === 270;
-                const pdfPage = pdfDoc.addPage(isRotated ? [height, width] : [width, height]);
-                const drawOptions: any = { width: image.width, height: image.height, rotate: degrees(-page.rotation) };
+            lines.forEach((line: string, i: number) => {
+                page.drawText(line, {
+                    x: s(obj.sp.x),
+                    y: transformY(obj.sp.y) - size - (i * lineHeight) + (size * 0.2), // Adjust baseline
+                    size: size,
+                    font: font,
+                    color: rgbColor,
+                });
+            });
+        }
+    };
 
-                if (page.rotation === 90) { drawOptions.x = image.width; drawOptions.y = 0; }
-                else if (page.rotation === 180) { drawOptions.x = image.width; drawOptions.y = image.height; }
-                else if (page.rotation === 270) { drawOptions.x = 0; drawOptions.y = image.height; }
-                
-                pdfPage.drawImage(image, drawOptions);
+    const createPdfBlob = async (pagesToExport: EditorPageState['pages']): Promise<Blob | null> => {
+        try {
+            const pdfDoc = await PDFDocument.create();
+            const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+            for (const page of pagesToExport) {
+                if (page.source.type === 'image') {
+                    const tempCanvas = document.createElement('canvas');
+                    const tempCtx = tempCanvas.getContext('2d');
+                    const img = new Image();
+
+                    const flattenedDataUrl = await new Promise<string>((resolve, reject) => {
+                        img.onload = async () => {
+                            tempCanvas.width = img.naturalWidth;
+                            tempCanvas.height = img.naturalHeight;
+                            tempCtx!.drawImage(img, 0, 0);
+
+                            const scaleX = 1;
+                            const scaleY = 1;
+
+                            for (const obj of (page.objects || [])) {
+                                if (obj.type === 'image-placeholder' && obj.imageData) {
+                                    try {
+                                        const objImg = new Image();
+                                        const objUrl = URL.createObjectURL(obj.imageData);
+                                        objImg.src = objUrl;
+                                        await new Promise((r, rej) => {
+                                            objImg.onload = r;
+                                            objImg.onerror = rej;
+                                        });
+                                        const sp = { x: obj.sp.x * scaleX, y: obj.sp.y * scaleY };
+                                        const ep = { x: obj.ep.x * scaleX, y: obj.ep.y * scaleY };
+                                        const x = Math.min(sp.x, ep.x);
+                                        const y = Math.min(sp.y, ep.y);
+                                        const w = Math.abs(sp.x - ep.x);
+                                        const h = Math.abs(sp.y - ep.y);
+                                        tempCtx!.drawImage(objImg, x, y, w, h);
+                                        tempCtx!.strokeStyle = '#FF69B4';
+                                        tempCtx!.lineWidth = (obj.strokeWidth || 2) * scaleX;
+                                        tempCtx!.strokeRect(x, y, w, h);
+                                        URL.revokeObjectURL(objUrl);
+                                    } catch (e) {
+                                        console.error("Failed to render object image in PDF", e);
+                                    }
+                                } else {
+                                    drawObject(tempCtx!, obj, { scaleX, scaleY });
+                                }
+                            }
+                            resolve(tempCanvas.toDataURL('image/jpeg', 0.92));
+                        };
+                        img.onerror = () => reject(new Error('Image failed to load for PDF generation'));
+
+                        // Handle image source
+                        if (page.source.type === 'image') {
+                            const url = URL.createObjectURL(page.source.data);
+                            img.src = url;
+                            // Revoke url after load? handled in onload/onerror implicitly by GC or we should revoke
+                        } else {
+                            reject(new Error("Unexpected page source type in image block"));
+                        }
+                    });
+
+                    const imageBytes = await fetch(flattenedDataUrl).then(res => res.arrayBuffer());
+                    const image = await pdfDoc.embedJpg(imageBytes);
+                    const { width, height } = image;
+                    const isRotated = page.rotation === 90 || page.rotation === 270;
+                    const pdfPage = pdfDoc.addPage(isRotated ? [height, width] : [width, height]);
+                    const drawOptions: any = { width: image.width, height: image.height, rotate: degrees(-page.rotation) };
+
+                    if (page.rotation === 90) { drawOptions.x = image.width; drawOptions.y = 0; }
+                    else if (page.rotation === 180) { drawOptions.x = image.width; drawOptions.y = image.height; }
+                    else if (page.rotation === 270) { drawOptions.x = 0; drawOptions.y = image.height; }
+
+                    pdfPage.drawImage(image, drawOptions);
+                } else if (page.source.type === 'pdf') {
+                    const sourceBlob = state.pdfAssets?.[page.source.pdfId];
+                    if (sourceBlob) {
+                        const sourcePdfBytes = await sourceBlob.arrayBuffer();
+                        const sourcePdfDoc = await PDFDocument.load(sourcePdfBytes);
+                        const [copiedPage] = await pdfDoc.copyPages(sourcePdfDoc, [page.source.pageIndex - 1]);
+                        pdfDoc.addPage(copiedPage);
+
+                        const currentRotation = copiedPage.getRotation().angle;
+                        copiedPage.setRotation(degrees(currentRotation + page.rotation));
+
+                        const { height } = copiedPage.getSize();
+                        const scale = 1.5;
+
+                        for (const obj of page.objects) {
+                            await drawVectorObject(copiedPage, obj, height, scale, helveticaFont);
+                        }
+                    }
+                }
             }
             const pdfBytes = await pdfDoc.save();
             return new Blob([pdfBytes], { type: 'application/pdf' });
@@ -1277,7 +1408,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const generatePdf = async (pagesToExport: EditorPageState['pages'], filename: string) => {
         // ... (existing generatePdf logic)
-         setIsLoading(true);
+        setIsLoading(true);
         try {
             const blob = await createPdfBlob(pagesToExport);
             if (!blob) { alert("產生 PDF 失敗。"); return false; }
@@ -1287,7 +1418,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             return true;
         } catch (error) { console.error("Failed to generate PDF:", error); alert("產生 PDF 失敗。"); return false; } finally { setIsLoading(false); }
     };
-    
+
     // ... (handlers: handleSaveAndDownload, handleShare, etc. unchanged)
     const handleSaveAndDownload = async () => {
         fileMenu.close();
@@ -1310,7 +1441,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const filename = `${projectName.replace(/\.pdf$/i, '') || 'document'}.pdf`;
         const file = new File([blob], filename, { type: 'application/pdf' });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            try { await navigator.share({ files: [file], title: projectName, text: '這是使用 PDF 編輯工具製作的文件，請查收。' }); } 
+            try { await navigator.share({ files: [file], title: projectName, text: '這是使用 PDF 編輯工具製作的文件，請查收。' }); }
             catch (err) { if ((err as Error).name !== 'AbortError') { console.error('Share failed:', err); alert('分享失敗，將為您下載檔案。'); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); } }
         } else { alert("您的瀏覽器不支援直接分享檔案，將為您下載檔案。"); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
     };
@@ -1342,27 +1473,40 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         setIsLoading(true);
         try {
             const newPages: PageData[] = [];
+            const newPdfAssets: Record<string, Blob> = { ...(state.pdfAssets || {}) };
             const sortedFiles = (Array.from(files) as File[]).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
             for (let i = 0; i < sortedFiles.length; i++) {
                 const file = sortedFiles[i];
                 if (file.type === 'application/pdf') {
+                    const pdfId = `pdf_added_${Date.now()}_${i}`;
+                    newPdfAssets[pdfId] = file;
+
                     const arrayBuffer = await file.arrayBuffer();
                     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                     for (let j = 1; j <= pdf.numPages; j++) {
-                        const page = await pdf.getPage(j);
-                        const viewport = page.getViewport({ scale: 1.0 });
-                        const canvas = document.createElement('canvas');
-                        const context = canvas.getContext('2d');
-                        if (!context) continue;
-                        canvas.width = viewport.width; canvas.height = viewport.height;
-                        await page.render({ canvasContext: context, viewport: viewport, canvas: canvas }).promise;
-                        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', CompressionQuality.NORMAL));
-                        if (blob) { newPages.push({ id: `page_added_${Date.now()}_${i}_${j}`, data: blob, rotation: 0, objects: [] }); }
+                        newPages.push({
+                            id: `page_added_${Date.now()}_${i}_${j}`,
+                            source: { type: 'pdf', pdfId, pageIndex: j },
+                            rotation: 0,
+                            objects: []
+                        });
                     }
-                } else if (file.type.startsWith('image/')) { newPages.push({ id: `page_added_${Date.now()}_${i}`, data: file, rotation: 0, objects: [] }); }
+                } else if (file.type.startsWith('image/')) {
+                    newPages.push({
+                        id: `page_added_${Date.now()}_${i}`,
+                        source: { type: 'image', data: file },
+                        rotation: 0,
+                        objects: []
+                    });
+                }
             }
             if (newPages.length > 0) {
-                const newState = { ...state, pages: [...state.pages, ...newPages] };
+                const newState = {
+                    ...state,
+                    pages: [...state.pages, ...newPages],
+                    pdfAssets: newPdfAssets
+                };
                 updateState(newState);
                 setViewedPageId(newPages[0].id);
                 scrollToThumbnail(newPages[0].id);
@@ -1381,10 +1525,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const scrollToThumbnail = (pageId: string) => {
         setTimeout(() => {
-             const mobileEl = thumbnailRefs.current.get(pageId);
-             if (mobileEl && thumbnailContainerRef.current && thumbnailContainerRef.current.offsetParent !== null) { mobileEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }
-             const desktopEl = desktopThumbnailRefs.current.get(pageId);
-             if (desktopEl && sidebarRef.current && sidebarRef.current.offsetParent !== null) { desktopEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }
+            const mobileEl = thumbnailRefs.current.get(pageId);
+            if (mobileEl && thumbnailContainerRef.current && thumbnailContainerRef.current.offsetParent !== null) { mobileEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }
+            const desktopEl = desktopThumbnailRefs.current.get(pageId);
+            if (desktopEl && sidebarRef.current && sidebarRef.current.offsetParent !== null) { desktopEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }
         }, 0);
     };
 
@@ -1393,7 +1537,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             setViewedPageId(pageId); setSelectedPages(new Set([pageId])); scrollToThumbnail(pageId);
         } else { togglePageSelection(pageId); }
     };
-    
+
     const handleRotateSelectedPages = () => {
         rotateMenu.close();
         if (selectedPages.size === 0) return;
@@ -1443,8 +1587,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 5));
     const handleZoomOut = () => setZoom(z => Math.max(z - 0.1, 0.2));
-    const handleResetZoom = () => { setZoom(1); setPan({x: 0, y: 0}); };
-    
+    const handleResetZoom = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+
     const handlersRef = useRef({ handleSaveAndDownload, handleUndo, canUndo, stamps });
     handlersRef.current = { handleSaveAndDownload, handleUndo, canUndo, stamps };
 
@@ -1458,7 +1602,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handlersRef.current.handleSaveAndDownload(); }
             if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); if (handlersRef.current.canUndo) { handlersRef.current.handleUndo(); } }
-            
+
             // Stamp shortcuts
             if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
                 const matchingStamp = handlersRef.current.stamps.find(s => s.shortcutKey === e.key.toLowerCase());
@@ -1478,18 +1622,18 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         e.preventDefault();
         if (isDrawingToolActive) return;
         if (e.ctrlKey) {
-             const scaleAmount = e.deltaY * -0.001;
-             setZoom(z => Math.max(0.2, Math.min(z + scaleAmount, 5)));
-             return;
+            const scaleAmount = e.deltaY * -0.001;
+            setZoom(z => Math.max(0.2, Math.min(z + scaleAmount, 5)));
+            return;
         }
         const now = Date.now();
-        if (now - lastScrollTime.current < 200) return; 
+        if (now - lastScrollTime.current < 200) return;
         if (e.deltaY > 0) {
-             const idx = state.pages.findIndex(p => p.id === viewedPageId);
-             if (idx < state.pages.length - 1) { const nextId = state.pages[idx + 1].id; setViewedPageId(nextId); lastScrollTime.current = now; scrollToThumbnail(nextId); }
+            const idx = state.pages.findIndex(p => p.id === viewedPageId);
+            if (idx < state.pages.length - 1) { const nextId = state.pages[idx + 1].id; setViewedPageId(nextId); lastScrollTime.current = now; scrollToThumbnail(nextId); }
         } else if (e.deltaY < 0) {
             const idx = state.pages.findIndex(p => p.id === viewedPageId);
-             if (idx > 0) { const prevId = state.pages[idx - 1].id; setViewedPageId(prevId); lastScrollTime.current = now; scrollToThumbnail(prevId); }
+            if (idx > 0) { const prevId = state.pages[idx - 1].id; setViewedPageId(prevId); lastScrollTime.current = now; scrollToThumbnail(prevId); }
         }
     };
 
@@ -1526,7 +1670,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         }
         return null;
     };
-    
+
     const getHandlesForObject = (object: EditorObject) => {
         const { sp, ep } = object;
         const minX = Math.min(sp.x, ep.x); const maxX = Math.max(sp.x, ep.x); const minY = Math.min(sp.y, ep.y); const maxY = Math.max(sp.y, ep.y);
@@ -1544,21 +1688,21 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     };
 
     const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>): Point => {
-        const canvas = canvasRef.current; const image = imageRef.current;
-        if (!canvas || !image) return { x: 0, y: 0 };
-        const rect = image.getBoundingClientRect();
+        const canvas = canvasRef.current; const background = backgroundRef.current;
+        if (!canvas || !background) return { x: 0, y: 0 };
+        const rect = background.getBoundingClientRect();
         let clientX, clientY;
         if ('touches' in e) {
-             if (e.touches.length > 0) { clientX = e.touches[0].clientX; clientY = e.touches[0].clientY; } 
-             else if (e.changedTouches.length > 0) { clientX = e.changedTouches[0].clientX; clientY = e.changedTouches[0].clientY; } 
-             else { return { x: 0, y: 0 }; }
+            if (e.touches.length > 0) { clientX = e.touches[0].clientX; clientY = e.touches[0].clientY; }
+            else if (e.changedTouches.length > 0) { clientX = e.changedTouches[0].clientX; clientY = e.changedTouches[0].clientY; }
+            else { return { x: 0, y: 0 }; }
         } else { clientX = (e as React.MouseEvent).clientX; clientY = (e as React.MouseEvent).clientY; }
         const imageCenterX = rect.left + rect.width / 2; const imageCenterY = rect.top + rect.height / 2;
         let vecX = clientX - imageCenterX; let vecY = clientY - imageCenterY;
         const rotation = viewedPage.rotation; const angleRad = -rotation * (Math.PI / 180);
         const rotatedX = vecX * Math.cos(angleRad) - vecY * Math.sin(angleRad); const rotatedY = vecX * Math.sin(angleRad) + vecY * Math.cos(angleRad);
         const unscaledX = rotatedX / zoom; const unscaledY = rotatedY / zoom;
-        const finalX = (image.clientWidth / 2) + unscaledX; const finalY = (image.clientHeight / 2) + unscaledY;
+        const finalX = (background.clientWidth / 2) + unscaledX; const finalY = (background.clientHeight / 2) + unscaledY;
         return { x: finalX, y: finalY };
     };
 
@@ -1567,15 +1711,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         if (textInput.show) { textInputRef.current?.blur(); return; }
         const startPoint = getCanvasCoordinates(e);
         if (isDrawingToolActive) {
-            if (activeTool === 'text') { setSelectedObjectId(null); setTextInput({ show: true, x: startPoint.x, y: startPoint.y, value: '' }); setTimeout(() => textInputRef.current?.focus(), 0); } 
+            if (activeTool === 'text') { setSelectedObjectId(null); setTextInput({ show: true, x: startPoint.x, y: startPoint.y, value: '' }); setTimeout(() => textInputRef.current?.focus(), 0); }
             else { setActionState({ type: 'drawing', startPoint }); setSelectedObjectId(null); }
         } else {
             const handle = getHandleAtPoint(startPoint, selectedObject);
-            if (handle) { setActionState({ type: 'resizing', startPoint, handle, initialObject: selectedObject! }); } 
+            if (handle) { setActionState({ type: 'resizing', startPoint, handle, initialObject: selectedObject! }); }
             else {
                 const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
                 if (objectToSelect && objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) { setTargetObjectId(objectToSelect.id); objectImageInputRef.current?.click(); return; }
-                if (objectToSelect) { setSelectedObjectId(objectToSelect.id); setActionState({ type: 'moving', startPoint, initialObject: objectToSelect }); } 
+                if (objectToSelect) { setSelectedObjectId(objectToSelect.id); setActionState({ type: 'moving', startPoint, initialObject: objectToSelect }); }
                 else { setSelectedObjectId(null); setActionState({ type: 'panning', panStartPoint: { x: e.clientX, y: e.clientY } }); }
             }
         }
@@ -1588,15 +1732,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         }
         if (actionState.type === 'idle') return;
         const currentPoint = getCanvasCoordinates(e); const { type, startPoint } = actionState;
-        if (type === 'drawing' && startPoint) { setPreviewObject({ id: 'preview', type: activeTool as DrawingTool, sp: startPoint, ep: currentPoint, color: drawingColor, strokeWidth: strokeWidth, }); } 
+        if (type === 'drawing' && startPoint) { setPreviewObject({ id: 'preview', type: activeTool as DrawingTool, sp: startPoint, ep: currentPoint, color: drawingColor, strokeWidth: strokeWidth, }); }
         else if (type === 'moving' && actionState.initialObject) {
             const dx = currentPoint.x - startPoint!.x; const dy = currentPoint.y - startPoint!.y; const { sp, ep } = actionState.initialObject;
             const updatedObject = { ...actionState.initialObject, sp: { x: sp.x + dx, y: sp.y + dy }, ep: { x: ep.x + dx, y: ep.y + dy }, }; setPreviewObject(updatedObject);
         } else if (type === 'resizing' && actionState.initialObject && actionState.handle) {
-             const { sp, ep } = actionState.initialObject; let newSp = { ...sp }; let newEp = { ...ep };
-             if (actionState.handle.includes('left')) { newSp.x = currentPoint.x; } if (actionState.handle.includes('right')) { newEp.x = currentPoint.x; }
-             if (actionState.handle.includes('top')) { newSp.y = currentPoint.y; } if (actionState.handle.includes('bottom')) { newEp.y = currentPoint.y; }
-             const updatedObject = { ...actionState.initialObject, sp: newSp, ep: newEp }; setPreviewObject(updatedObject);
+            const { sp, ep } = actionState.initialObject; let newSp = { ...sp }; let newEp = { ...ep };
+            if (actionState.handle.includes('left')) { newSp.x = currentPoint.x; } if (actionState.handle.includes('right')) { newEp.x = currentPoint.x; }
+            if (actionState.handle.includes('top')) { newSp.y = currentPoint.y; } if (actionState.handle.includes('bottom')) { newEp.y = currentPoint.y; }
+            const updatedObject = { ...actionState.initialObject, sp: newSp, ep: newEp }; setPreviewObject(updatedObject);
         }
     };
 
@@ -1633,19 +1777,19 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         if (e.touches.length === 2) {
             if (isDrawingToolActive) { e.preventDefault(); return; }
             e.preventDefault(); const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-            pinchState.current = { isPinching: true, initialDist: dist, initialZoom: zoom }; setActionState({type: 'idle'});
+            pinchState.current = { isPinching: true, initialDist: dist, initialZoom: zoom }; setActionState({ type: 'idle' });
         } else if (e.touches.length === 1) {
             const touch = e.touches[0]; const startPoint = getCanvasCoordinates(e);
-            if (isDrawingToolActive) { e.preventDefault(); if (activeTool !== 'text') { setActionState({ type: 'drawing', startPoint }); setSelectedObjectId(null); } } 
+            if (isDrawingToolActive) { e.preventDefault(); if (activeTool !== 'text') { setActionState({ type: 'drawing', startPoint }); setSelectedObjectId(null); } }
             else {
                 const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
                 if (objectToSelect && objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) { setTargetObjectId(objectToSelect.id); objectImageInputRef.current?.click(); return; }
-                if (objectToSelect) { setSelectedObjectId(objectToSelect.id); setActionState({ type: 'moving', startPoint, initialObject: objectToSelect }); } 
+                if (objectToSelect) { setSelectedObjectId(objectToSelect.id); setActionState({ type: 'moving', startPoint, initialObject: objectToSelect }); }
                 else { setSelectedObjectId(null); setActionState({ type: 'panning', panStartPoint: { x: touch.clientX, y: touch.clientY } }); }
             }
         }
     };
-    
+
     const handleCanvasTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
         if (pinchState.current.isPinching && e.touches.length === 2) {
             if (isDrawingToolActive) return;
@@ -1655,20 +1799,20 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             const touch = e.touches[0]; const dx = touch.clientX - actionState.panStartPoint.x; const dy = touch.clientY - actionState.panStartPoint.y;
             setPan(p => ({ x: p.x + dx, y: p.y + dy })); setActionState(s => ({ ...s, panStartPoint: { x: touch.clientX, y: touch.clientY } }));
         } else if ((actionState.type === 'drawing' || actionState.type === 'moving') && e.touches.length === 1) {
-             e.preventDefault(); const currentPoint = getCanvasCoordinates(e); const { type, startPoint, initialObject } = actionState;
-             if (type === 'drawing' && startPoint) { setPreviewObject({ id: 'preview', type: activeTool as DrawingTool, sp: startPoint, ep: currentPoint, color: drawingColor, strokeWidth }); } 
-             else if (type === 'moving' && initialObject) {
-                 const dx = currentPoint.x - startPoint!.x; const dy = currentPoint.y - startPoint!.y; const { sp, ep } = initialObject;
-                 setPreviewObject({ ...initialObject, sp: { x: sp.x + dx, y: sp.y + dy }, ep: { x: ep.x + dx, y: ep.y + dy } });
-             }
+            e.preventDefault(); const currentPoint = getCanvasCoordinates(e); const { type, startPoint, initialObject } = actionState;
+            if (type === 'drawing' && startPoint) { setPreviewObject({ id: 'preview', type: activeTool as DrawingTool, sp: startPoint, ep: currentPoint, color: drawingColor, strokeWidth }); }
+            else if (type === 'moving' && initialObject) {
+                const dx = currentPoint.x - startPoint!.x; const dy = currentPoint.y - startPoint!.y; const { sp, ep } = initialObject;
+                setPreviewObject({ ...initialObject, sp: { x: sp.x + dx, y: sp.y + dy }, ep: { x: ep.x + dx, y: ep.y + dy } });
+            }
         }
     };
 
     const handleCanvasTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
-        if (pinchState.current.isPinching) { pinchState.current.isPinching = false; } 
+        if (pinchState.current.isPinching) { pinchState.current.isPinching = false; }
         else { handleCanvasMouseUp(e as unknown as React.MouseEvent<HTMLCanvasElement>); }
     };
-    
+
     const handleTextBlur = () => {
         const canvas = canvasRef.current; const ctx = canvas?.getContext('2d');
         if (textInput.value && viewedPageId && ctx) {
@@ -1682,7 +1826,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         }
         setTextInput({ show: false, x: 0, y: 0, value: '' }); setActiveTool('move');
     };
-    
+
     const drawObject = (ctx: CanvasRenderingContext2D, obj: EditorObject, options: { scaleX?: number, scaleY?: number } = {}) => {
         const { scaleX = 1, scaleY = 1 } = options;
         const sp = { x: obj.sp.x * scaleX, y: obj.sp.y * scaleY };
@@ -1706,7 +1850,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             case 'image-placeholder':
                 const x = Math.min(sp.x, ep.x); const y = Math.min(sp.y, ep.y); const w = Math.abs(sp.x - ep.x); const h = Math.abs(sp.y - ep.y);
                 ctx.strokeRect(x, y, w, h);
-                if (obj.imageData && loadedObjectImages.current.has(obj.id)) { const img = loadedObjectImages.current.get(obj.id); if (img) { ctx.drawImage(img, x, y, w, h); } } 
+                if (obj.imageData && loadedObjectImages.current.has(obj.id)) { const img = loadedObjectImages.current.get(obj.id); if (img) { ctx.drawImage(img, x, y, w, h); } }
                 else if (!obj.imageData) {
                     const cx = x + w / 2; const cy = y + h / 2; const plusSize = Math.min(w, h) / 4;
                     ctx.beginPath(); ctx.moveTo(cx - plusSize, cy); ctx.lineTo(cx + plusSize, cy); ctx.moveTo(cx, cy - plusSize); ctx.lineTo(cx, cy + plusSize); ctx.stroke();
@@ -1744,10 +1888,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                         ctx.closePath();
                         ctx.fill();
                     }
-                    
+
                     // Text
                     ctx.fillStyle = obj.color || 'white';
-                    const size = (obj.fontSize || 24) * scaleY; 
+                    const size = (obj.fontSize || 24) * scaleY;
                     ctx.font = `bold ${size}px sans-serif`;
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
@@ -1759,17 +1903,17 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 break;
         }
     };
-    
+
     useEffect(() => {
         const canvas = canvasRef.current; const image = imageRef.current; const ctx = canvas?.getContext('2d');
         if (!ctx || !canvas || !image || !viewedPage) return;
         const { clientWidth, clientHeight } = image;
-        if (canvas.width !== clientWidth || canvas.height !== clientHeight) { canvas.width = clientWidth; canvas.height = clientHeight; } 
+        if (canvas.width !== clientWidth || canvas.height !== clientHeight) { canvas.width = clientWidth; canvas.height = clientHeight; }
         else { ctx.clearRect(0, 0, canvas.width, canvas.height); }
         const objectsToDraw = previewObject ? viewedPage.objects.filter(o => o.id !== previewObject.id) : viewedPage.objects;
         objectsToDraw.forEach(obj => drawObject(ctx, obj));
         if (previewObject) { drawObject(ctx, previewObject); }
-        
+
         const currentSelectedObject = previewObject && previewObject.id === selectedObjectId ? previewObject : selectedObject;
         if (currentSelectedObject) {
             const { sp, ep } = currentSelectedObject; const x = Math.min(sp.x, ep.x); const y = Math.min(sp.y, ep.y); const w = Math.abs(sp.x - ep.x); const h = Math.abs(sp.y - ep.y);
@@ -1784,10 +1928,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const canvas = canvasRef.current; if (!canvas) return;
         if (isDrawingToolActive) { canvas.style.cursor = 'crosshair'; } else if (actionState.type === 'moving') { canvas.style.cursor = 'grabbing'; } else if (actionState.type === 'resizing') { canvas.style.cursor = 'nwse-resize'; } else if (actionState.type === 'panning') { canvas.style.cursor = 'grabbing'; } else { canvas.style.cursor = 'grab'; }
     }, [activeTool, actionState.type, isDrawingToolActive]);
-    
+
     return (
         <div className="flex flex-col h-screen bg-slate-900">
-             {isLoading && (
+            {isLoading && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center z-[60]">
                     <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
                     <p className="text-white mt-6 text-lg font-medium tracking-wide">處理中...</p>
@@ -1796,7 +1940,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
             <StampSettingsModal isOpen={showStampSettings} onClose={() => setShowStampSettings(false)} />
 
-            <StampPickerModal 
+            <StampPickerModal
                 isOpen={showStampPicker}
                 onClose={() => setShowStampPicker(false)}
                 stamps={stamps}
@@ -1859,7 +2003,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     </div>
                 </div>
             )}
-            
+
             {/* Header & Toolbar - Styled for Editor */}
             <header className="bg-slate-800 shadow-xl border-b border-slate-700 z-40 relative flex flex-col">
                 {/* Top Row */}
@@ -1873,8 +2017,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                     : `已選取 ${selectedPages.size}`
                                 }
                             </h2>
-                            <button 
-                                onClick={() => setSelectionMode(m => m === 'view' ? 'select' : 'view')} 
+                            <button
+                                onClick={() => setSelectionMode(m => m === 'view' ? 'select' : 'view')}
                                 className={`p-2 rounded hover:bg-slate-700 transition-colors ${selectionMode === 'select' ? 'text-blue-400 bg-slate-700/50' : 'text-slate-400'}`}
                                 title={selectionMode === 'view' ? '切換至多選模式' : '切換至檢視模式'}
                             >
@@ -1892,15 +2036,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                             {fileMenu.isOpen && (
                                 <div className="absolute left-0 mt-2 w-56 bg-slate-700 rounded-md shadow-lg py-1 z-50 border border-slate-600">
                                     <button onClick={handleAddPages} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 flex items-center gap-2">
-                                         <PlusIcon className="w-4 h-4" /> 新增頁面/圖片
+                                        <PlusIcon className="w-4 h-4" /> 新增頁面/圖片
                                     </button>
                                     <div className="border-t border-slate-600 my-1"></div>
                                     <button onClick={() => { fileMenu.close(); setShowCompressModal(true); }} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 flex items-center gap-2">
-                                         <CompressIcon className="w-4 h-4" /> 壓縮檔案
+                                        <CompressIcon className="w-4 h-4" /> 壓縮檔案
                                     </button>
                                     <div className="border-t border-slate-600 my-1"></div>
-                                     <button onClick={() => { fileMenu.close(); setShowStampSettings(true); }} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 flex items-center gap-2">
-                                         <StampIcon className="w-4 h-4" /> 設定印章
+                                    <button onClick={() => { fileMenu.close(); setShowStampSettings(true); }} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 flex items-center gap-2">
+                                        <StampIcon className="w-4 h-4" /> 設定印章
                                     </button>
                                     <div className="border-t border-slate-600 my-1"></div>
                                     <a href="#" onClick={(e) => { e.preventDefault(); handleSaveAndDownload(); }} className="flex items-center gap-2 px-4 py-2 text-sm text-white hover:bg-slate-600">
@@ -1921,9 +2065,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                             <button onClick={rotateMenu.toggle} className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-sm text-white transition-colors" title="旋轉">
                                 <RotateIcon className="w-4 h-4" /> <span className="hidden md:inline">旋轉</span>
                             </button>
-                                {rotateMenu.isOpen && (
+                            {rotateMenu.isOpen && (
                                 <div className="absolute left-0 mt-2 w-44 bg-slate-700 rounded-md shadow-lg py-1 z-50 border border-slate-600">
-                                        <button onClick={handleRotateSelectedPages} disabled={selectedPages.size === 0} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 disabled:opacity-50">
+                                    <button onClick={handleRotateSelectedPages} disabled={selectedPages.size === 0} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 disabled:opacity-50">
                                         旋轉選取 90° ({selectedPages.size})
                                     </button>
                                     <a href="#" onClick={(e) => { e.preventDefault(); handleRotateAllPages(); }} className="block px-4 py-2 text-sm text-white hover:bg-slate-600">全部旋轉 90°</a>
@@ -1947,9 +2091,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                             )}
                         </div>
                     </div>
-                    
+
                     <div className="flex-1 flex items-center justify-end gap-2">
-                         {showSaveSuccess && <span className="hidden md:inline text-green-400 text-sm animate-pulse ml-2 font-medium">已儲存!</span>}
+                        {showSaveSuccess && <span className="hidden md:inline text-green-400 text-sm animate-pulse ml-2 font-medium">已儲存!</span>}
                         <div className="font-bold text-slate-200 truncate max-w-[100px] md:max-w-xs bg-slate-900/50 px-2 py-1 rounded">
                             {projectName}
                         </div>
@@ -1957,7 +2101,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 </div>
 
                 {/* Toolbar */}
-                <div 
+                <div
                     style={{ top: `${toolbarY}%` }}
                     className={`
                     z-30 transition-all
@@ -1965,7 +2109,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     md:static md:flex-row md:translate-y-0 md:bg-slate-900/30 md:shadow-none md:p-2 md:h-auto md:w-full md:justify-center md:overflow-visible md:border-0
                 `}>
                     {/* Mobile Drag Handle */}
-                    <div 
+                    <div
                         className="md:hidden flex justify-center cursor-ns-resize py-1 -mt-2 mb-1"
                         onTouchStart={handleToolbarDragStart}
                         onTouchMove={handleToolbarDragMove}
@@ -1986,7 +2130,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
                         <div className="flex md:flex-row flex-col items-center gap-2">
                             <button onClick={() => setActiveTool('move')} title="移動" className={`p-2 rounded-full transition-all ${activeTool === 'move' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <HandIcon className="w-5 h-5" /> </button>
-                            
+
                             {/* Desktop Shape Tools */}
                             <div className="hidden md:flex items-center gap-2">
                                 <button onClick={() => setActiveTool('line')} title="直線" className={`p-2 rounded-full transition-all ${activeTool === 'line' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <LineIcon className="w-5 h-5" /> </button>
@@ -1997,58 +2141,58 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
                             {/* Mobile Shape Menu (Accordion) */}
                             <div className="md:hidden flex flex-col items-center gap-2 w-full relative transition-all" ref={shapeMenu.ref}>
-                                <button 
-                                    onClick={shapeMenu.toggle} 
-                                    title="繪圖工具" 
+                                <button
+                                    onClick={shapeMenu.toggle}
+                                    title="繪圖工具"
                                     className={`p-2 rounded-full transition-all ${['line', 'arrow', 'rect', 'circle'].includes(activeTool || '') ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}
-                                > 
-                                    <PenIcon className="w-5 h-5" /> 
+                                >
+                                    <PenIcon className="w-5 h-5" />
                                 </button>
                                 {shapeMenu.isOpen && (
                                     <div className="flex flex-col gap-2 bg-slate-700/50 p-2 rounded-xl w-full items-center animate-fade-in border border-slate-600/30">
-                                         <button onClick={() => { setActiveTool('line'); shapeMenu.close(); }} title="直線" className={`p-2 rounded-full transition-all ${activeTool === 'line' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-600'}`}> <LineIcon className="w-5 h-5" /> </button>
-                                         <button onClick={() => { setActiveTool('arrow'); shapeMenu.close(); }} title="箭頭" className={`p-2 rounded-full transition-all ${activeTool === 'arrow' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-600'}`}> <ArrowIcon className="w-5 h-5" /> </button>
-                                         <button onClick={() => { setActiveTool('rect'); shapeMenu.close(); }} title="方形" className={`p-2 rounded-full transition-all ${activeTool === 'rect' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-600'}`}> <RectIcon className="w-5 h-5" /> </button>
-                                         <button onClick={() => { setActiveTool('circle'); shapeMenu.close(); }} title="圓形" className={`p-2 rounded-full transition-all ${activeTool === 'circle' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-600'}`}> <CircleIcon className="w-5 h-5" /> </button>
+                                        <button onClick={() => { setActiveTool('line'); shapeMenu.close(); }} title="直線" className={`p-2 rounded-full transition-all ${activeTool === 'line' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-600'}`}> <LineIcon className="w-5 h-5" /> </button>
+                                        <button onClick={() => { setActiveTool('arrow'); shapeMenu.close(); }} title="箭頭" className={`p-2 rounded-full transition-all ${activeTool === 'arrow' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-600'}`}> <ArrowIcon className="w-5 h-5" /> </button>
+                                        <button onClick={() => { setActiveTool('rect'); shapeMenu.close(); }} title="方形" className={`p-2 rounded-full transition-all ${activeTool === 'rect' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-600'}`}> <RectIcon className="w-5 h-5" /> </button>
+                                        <button onClick={() => { setActiveTool('circle'); shapeMenu.close(); }} title="圓形" className={`p-2 rounded-full transition-all ${activeTool === 'circle' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-600'}`}> <CircleIcon className="w-5 h-5" /> </button>
                                     </div>
                                 )}
                             </div>
 
                             <button onClick={() => setActiveTool('text')} title="文字" className={`p-2 rounded-full transition-all ${activeTool === 'text' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <TextIcon className="w-5 h-5" /> </button>
                             <button onClick={() => setActiveTool('image-placeholder')} title="疊加圖片" className={`p-2 rounded-full transition-all ${activeTool === 'image-placeholder' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <ImageIcon className="w-5 h-5" /> </button>
-                            
-                            <button 
+
+                            <button
                                 onClick={() => setShowStampPicker(true)}
-                                title="印章" 
+                                title="印章"
                                 className={`p-2 rounded-full transition-all ${activeTool === 'stamp' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}
-                            > 
-                                <StampIcon className="w-5 h-5" /> 
+                            >
+                                <StampIcon className="w-5 h-5" />
                             </button>
-                        </div>
-                        
+                        </div >
+
                         {isDrawingToolActive && (
                             <div className="flex md:flex-row flex-col items-center gap-3 pt-2 md:pt-0 md:pl-3 border-t md:border-t-0 md:border-l border-slate-600 w-full md:w-auto">
                                 {activeTool !== 'image-placeholder' && activeTool !== 'stamp' && (
-                                     <input type="color" value={drawingColor} onChange={(e) => setDrawingColor(e.target.value)} className="w-8 h-8 rounded-full bg-transparent cursor-pointer border-none p-0 overflow-hidden ring-2 ring-slate-600" />
+                                    <input type="color" value={drawingColor} onChange={(e) => setDrawingColor(e.target.value)} className="w-8 h-8 rounded-full bg-transparent cursor-pointer border-none p-0 overflow-hidden ring-2 ring-slate-600" />
                                 )}
                                 {activeTool !== 'text' && activeTool !== 'stamp' && (
-                                     <div className="flex md:flex-row flex-col items-center gap-1">
+                                    <div className="flex md:flex-row flex-col items-center gap-1">
                                         {[2, 5, 10].map(width => (
                                             <button key={width} onClick={() => setStrokeWidth(width)} className={`w-6 h-6 flex items-center justify-center rounded-full transition-colors ${strokeWidth === width ? 'bg-slate-500' : 'hover:bg-slate-700'}`}>
-                                                <div className="bg-white rounded-full" style={{width: `${Math.min(width+2, 14)}px`, height: `${Math.min(width+2, 14)}px`}}></div>
+                                                <div className="bg-white rounded-full" style={{ width: `${Math.min(width + 2, 14)}px`, height: `${Math.min(width + 2, 14)}px` }}></div>
                                             </button>
                                         ))}
                                     </div>
                                 )}
-                                 {activeTool === 'text' && (
+                                {activeTool === 'text' && (
                                     <div className="flex md:flex-row flex-col items-center gap-2 md:gap-3">
                                         <div className="flex items-center gap-1 bg-slate-700 rounded px-1">
                                             <input type="number" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value, 10))} className="bg-transparent border-none w-8 md:w-10 text-sm text-center text-white focus:ring-0 p-1" />
                                             <span className="text-xs text-slate-400 hidden md:inline pr-1">px</span>
                                         </div>
-                                        <select 
-                                            value={fontFamily} 
-                                            onChange={(e) => setFontFamily(e.target.value)} 
+                                        <select
+                                            value={fontFamily}
+                                            onChange={(e) => setFontFamily(e.target.value)}
                                             className="bg-slate-700 text-white border-none rounded text-xs md:text-sm h-8 px-2 max-w-[80px] md:max-w-[120px] focus:ring-0"
                                         >
                                             <option value="sans-serif">Sans Serif</option>
@@ -2056,32 +2200,32 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                             <option value="monospace">Mono</option>
                                         </select>
                                         <div className="flex items-center gap-2 border-l border-slate-600 pl-2 md:pl-3">
-                                             <label className="flex items-center gap-1 text-xs text-slate-300 cursor-pointer select-none">
-                                                <input 
-                                                    type="checkbox" 
-                                                    checked={textBackgroundColor !== 'transparent'} 
-                                                    onChange={(e) => setTextBackgroundColor(e.target.checked ? '#ffffff' : 'transparent')} 
+                                            <label className="flex items-center gap-1 text-xs text-slate-300 cursor-pointer select-none">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={textBackgroundColor !== 'transparent'}
+                                                    onChange={(e) => setTextBackgroundColor(e.target.checked ? '#ffffff' : 'transparent')}
                                                     className="rounded bg-slate-700 border-slate-600 text-blue-600 focus:ring-0 w-3 h-3 md:w-4 md:h-4"
                                                 />
                                                 <span className="hidden md:inline">背景</span>
-                                             </label>
+                                            </label>
                                         </div>
                                     </div>
                                 )}
                             </div>
                         )}
-                    </div>
-                </div>
-            </header>
+                    </div >
+                </div >
+            </header >
 
             <div className="flex flex-1 overflow-hidden relative">
                 {/* Desktop Sidebar */}
-                <div 
+                <div
                     ref={sidebarRef}
                     className="hidden md:flex flex-col w-52 bg-slate-800 border-r border-slate-700 overflow-y-auto custom-scrollbar flex-shrink-0"
                 >
-                     <div className="p-4 space-y-4">
-                         {state.pages.map((page, index) => (
+                    <div className="p-4 space-y-4">
+                        {state.pages.map((page, index) => (
                             <div key={page.id}
                                 draggable
                                 onDragStart={() => setDraggedId(page.id)}
@@ -2100,30 +2244,30 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                     ${draggedId === page.id ? 'opacity-40 scale-95' : ''}
                                 `}
                             >
-                                <img 
-                                    src={pageUrlCache.get(page.id)} 
-                                    className="w-full h-full object-contain p-1" 
-                                    style={{transform: `rotate(${page.rotation}deg)`}} 
+                                <img
+                                    src={pageUrlCache.get(page.id)}
+                                    className="w-full h-full object-contain p-1"
+                                    style={{ transform: `rotate(${page.rotation}deg)` }}
                                     alt={`Page ${index + 1}`}
                                 />
                                 <div className="absolute bottom-1 right-1 bg-slate-900/80 text-white text-[10px] font-mono px-2 py-0.5 rounded-md shadow-sm">
                                     {index + 1}
                                 </div>
                             </div>
-                         ))}
-                     </div>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Right Column */}
                 <div className="flex flex-col flex-1 min-w-0 relative bg-slate-900">
                     {/* ... (Thumbnail container code remains same) */}
-                    <div 
+                    <div
                         ref={thumbnailContainerRef}
                         className="md:hidden bg-slate-800 border-b border-slate-700 h-24 flex items-center px-4 gap-3 overflow-x-auto no-scrollbar flex-shrink-0 relative z-30 shadow-md"
                         onWheel={handleThumbnailWheel}
                     >
                         {state.pages.map((page, index) => (
-                            <div key={page.id} 
+                            <div key={page.id}
                                 ref={el => {
                                     if (el) thumbnailRefs.current.set(page.id, el);
                                     else thumbnailRefs.current.delete(page.id);
@@ -2141,10 +2285,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 `}
                                 onClick={() => handleThumbnailClick(page.id)}
                             >
-                                <img 
-                                    src={pageUrlCache.get(page.id)} 
-                                    className="h-full w-auto object-contain bg-slate-900" 
-                                    style={{transform: `rotate(${page.rotation}deg)`}} 
+                                <img
+                                    src={pageUrlCache.get(page.id)}
+                                    className="h-full w-auto object-contain bg-slate-900"
+                                    style={{ transform: `rotate(${page.rotation}deg)` }}
                                     alt={`Page ${index + 1}`}
                                 />
                                 <div className="absolute bottom-0 right-0 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-tl">
@@ -2154,18 +2298,34 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                         ))}
                     </div>
 
-                    <main className="flex-1 p-4 flex flex-col relative overflow-hidden" onWheel={handleMainViewWheel} style={{backgroundImage: 'radial-gradient(circle at center, #1e293b 1px, transparent 1px)', backgroundSize: '24px 24px'}}>
+                    <main className="flex-1 p-4 flex flex-col relative overflow-hidden" onWheel={handleMainViewWheel} style={{ backgroundImage: 'radial-gradient(circle at center, #1e293b 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
                         <div className="flex-grow overflow-hidden flex items-center justify-center">
                             {viewedPage ? (
                                 <div className="relative touch-none select-none shadow-2xl" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transition: 'transform 0.2s ease-in-out', transformOrigin: 'center center' }}>
-                                <img 
-                                        ref={imageRef} 
-                                        src={pageUrlCache.get(viewedPage.id)} 
-                                        className="max-w-full max-h-full object-contain pointer-events-none" 
-                                        style={{transform: `rotate(${viewedPage.rotation}deg)`}}
-                                        onLoad={() => setImageLoadedCount(c => c + 1)}
-                                />
-                                <canvas
+                                    {viewedPage.source.type === 'pdf' ? (
+                                        <div
+                                            ref={backgroundRef as React.RefObject<HTMLDivElement>}
+                                            className="pointer-events-none origin-center"
+                                            style={{ transform: `rotate(${viewedPage.rotation}deg)`, display: 'inline-block' }}
+                                        >
+                                            <PDFPageView
+                                                pdfBlob={state.pdfAssets?.[viewedPage.source.pdfId]}
+                                                pageIndex={viewedPage.source.pageIndex}
+                                                scale={1.5}
+                                                rotation={0}
+                                                onLoadSuccess={() => setImageLoadedCount(c => c + 1)}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <img
+                                            ref={backgroundRef as React.RefObject<HTMLImageElement>}
+                                            src={pageUrlCache.get(viewedPage.id)}
+                                            className="max-w-full max-h-full object-contain pointer-events-none"
+                                            style={{ transform: `rotate(${viewedPage.rotation}deg)` }}
+                                            onLoad={() => setImageLoadedCount(c => c + 1)}
+                                        />
+                                    )}
+                                    <canvas
                                         ref={canvasRef}
                                         className={`absolute top-0 left-0 pointer-events-auto z-10`}
                                         style={{ transform: `rotate(${viewedPage.rotation}deg)` }}
@@ -2176,34 +2336,34 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                         onTouchStart={handleCanvasTouchStart}
                                         onTouchMove={handleCanvasTouchMove}
                                         onTouchEnd={handleCanvasTouchEnd}
-                                />
-                                {textInput.show && (
-                                    <textarea
-                                        ref={textInputRef}
-                                        value={textInput.value}
-                                        onChange={(e) => setTextInput(t => ({...t, value: e.target.value}))}
-                                        onBlur={handleTextBlur}
-                                        className="absolute border p-1 z-20 overflow-auto resize whitespace-pre shadow-sm rounded-sm"
-                                        style={{ 
-                                            left: textInput.x * zoom, 
-                                            top: textInput.y * zoom, 
-                                            fontSize: fontSize * zoom,
-                                            fontFamily: fontFamily,
-                                            color: drawingColor,
-                                            borderColor: drawingColor,
-                                            backgroundColor: textBackgroundColor,
-                                            transform: `rotate(${viewedPage.rotation}deg)`,
-                                            transformOrigin: 'top left',
-                                            minWidth: `${100 * zoom}px`,
-                                            minHeight: `${(fontSize * 1.5) * zoom}px`
-                                            }}
                                     />
-                                )}
+                                    {textInput.show && (
+                                        <textarea
+                                            ref={textInputRef}
+                                            value={textInput.value}
+                                            onChange={(e) => setTextInput(t => ({ ...t, value: e.target.value }))}
+                                            onBlur={handleTextBlur}
+                                            className="absolute border p-1 z-20 overflow-auto resize whitespace-pre shadow-sm rounded-sm"
+                                            style={{
+                                                left: textInput.x * zoom,
+                                                top: textInput.y * zoom,
+                                                fontSize: fontSize * zoom,
+                                                fontFamily: fontFamily,
+                                                color: drawingColor,
+                                                borderColor: drawingColor,
+                                                backgroundColor: textBackgroundColor,
+                                                transform: `rotate(${viewedPage.rotation}deg)`,
+                                                transformOrigin: 'top left',
+                                                minWidth: `${100 * zoom}px`,
+                                                minHeight: `${(fontSize * 1.5) * zoom}px`
+                                            }}
+                                        />
+                                    )}
                                 </div>
-                                ) : <p className="text-slate-500">沒有頁面可顯示</p>
+                            ) : <p className="text-slate-500">沒有頁面可顯示</p>
                             }
                         </div>
-                        
+
                         {viewedPage && (
                             <div className="hidden md:flex flex-col-reverse absolute bottom-6 right-6 z-30 gap-2">
                                 <div className="bg-slate-800/80 backdrop-blur-md rounded-full items-center text-white shadow-xl border border-slate-600 flex p-1">
@@ -2211,7 +2371,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                         <MinusIcon className="w-5 h-5" />
                                     </button>
                                     <span className="px-2 text-sm font-mono font-semibold w-14 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
-                                     <button onClick={handleResetZoom} className="p-2.5 hover:bg-slate-700 rounded-full transition-colors" title="恢復 100%">
+                                    <button onClick={handleResetZoom} className="p-2.5 hover:bg-slate-700 rounded-full transition-colors" title="恢復 100%">
                                         <ResetZoomIcon className="w-5 h-5" />
                                     </button>
                                     <button onClick={handleZoomIn} className="p-2.5 hover:bg-slate-700 rounded-full transition-colors" title="放大">
@@ -2225,231 +2385,235 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             </div>
             <input type="file" ref={fileInputRef} multiple accept="application/pdf,image/*" className="hidden" onChange={onAddFilesChange} />
             <input type="file" ref={objectImageInputRef} accept="image/*" className="hidden" onChange={onObjectImageChange} />
-        </div>
+        </div >
     );
 };
 
 const App: React.FC = () => {
-  const [view, setView] = useState<'home' | 'editor' | 'merge-sort'>('home');
-  const [projects, setProjects] = useState<ProjectMetadata[]>([]);
-  // ... (App component logic remains largely unchanged)
-  const [currentProject, setCurrentProject] = useState<StoredProject | null>(null);
-  const [isAppLoading, setIsAppLoading] = useState(false);
-  
-  // Merge State
-  const [mergeFiles, setMergeFiles] = useState<File[]>([]);
-  const [sortedMergeFiles, setSortedMergeFiles] = useState<MergeFileData[]>([]);
-  const [showFileSortModal, setShowFileSortModal] = useState(false);
+    const [view, setView] = useState<'home' | 'editor' | 'merge-sort'>('home');
+    const [projects, setProjects] = useState<ProjectMetadata[]>([]);
+    // ... (App component logic remains largely unchanged)
+    const [currentProject, setCurrentProject] = useState<StoredProject | null>(null);
+    const [isAppLoading, setIsAppLoading] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const mergeInputRef = useRef<HTMLInputElement>(null);
+    // Merge State
+    const [mergeFiles, setMergeFiles] = useState<File[]>([]);
+    const [sortedMergeFiles, setSortedMergeFiles] = useState<MergeFileData[]>([]);
+    const [showFileSortModal, setShowFileSortModal] = useState(false);
 
-  const loadProjects = useCallback(async () => {
-    try {
-        const metas = await dbService.getProjectsMetadata();
-        setProjects(metas);
-    } catch (error) {
-        console.error("Failed to load projects", error);
-    }
-  }, []);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const mergeInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
-
-  const handleCreateProject = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-    setIsAppLoading(true);
-    try {
-        const newPages: PageData[] = [];
-        const sortedFiles = (Array.from(files) as File[]).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-        for (let i = 0; i < sortedFiles.length; i++) {
-            const file = sortedFiles[i];
-            if (file.type === 'application/pdf') {
-                const arrayBuffer = await file.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                for (let j = 1; j <= pdf.numPages; j++) {
-                    const page = await pdf.getPage(j);
-                    const viewport = page.getViewport({ scale: 1.0 });
-                    const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
-                    if (!context) continue;
-                    canvas.width = viewport.width; canvas.height = viewport.height;
-                    await page.render({ canvasContext: context, viewport: viewport, canvas: canvas, }).promise;
-                    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', CompressionQuality.NORMAL));
-                    if (blob) { newPages.push({ id: `page_${Date.now()}_${i}_${j}`, data: blob, rotation: 0, objects: [] }); }
-                }
-            } else if (file.type.startsWith('image/')) { newPages.push({ id: `page_${Date.now()}_${i}`, data: file, rotation: 0, objects: [] }); }
+    const loadProjects = useCallback(async () => {
+        try {
+            const metas = await dbService.getProjectsMetadata();
+            setProjects(metas);
+        } catch (error) {
+            console.error("Failed to load projects", error);
         }
-        if (newPages.length === 0) { throw new Error("No valid pages created"); }
-        
-        // Initial size calculation
-        const totalSize = newPages.reduce((acc, p) => acc + p.data.size, 0);
+    }, []);
 
-        const newProject: StoredProject = { id: `proj_${Date.now()}`, name: sortedFiles.length === 1 ? sortedFiles[0].name : `新專案-${new Date().toLocaleDateString()}`, pages: newPages, timestamp: Date.now(), fileSize: totalSize };
-        await dbService.saveProject(newProject);
-        setCurrentProject(newProject);
-        setView('editor');
+    useEffect(() => {
         loadProjects();
-    } catch (e) { console.error("Error creating project:", e); alert("無法開啟檔案 (可能格式不支援或已損壞)"); } finally { setIsAppLoading(false); if(fileInputRef.current) fileInputRef.current.value = ''; }
-  };
+    }, [loadProjects]);
 
-  const handleMergeSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files && files.length > 0) { setMergeFiles(Array.from(files)); setShowFileSortModal(true); }
-    if(mergeInputRef.current) mergeInputRef.current.value = '';
-  };
+    const handleCreateProject = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+        setIsAppLoading(true);
+        try {
+            const newPages: PageData[] = [];
+            const pdfAssets: Record<string, Blob> = {};
+            const sortedFiles = (Array.from(files) as File[]).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+            for (let i = 0; i < sortedFiles.length; i++) {
+                const file = sortedFiles[i];
+                if (file.type === 'application/pdf') {
+                    const pdfId = `pdf_${Date.now()}_${i}`;
+                    pdfAssets[pdfId] = file;
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    for (let j = 1; j <= pdf.numPages; j++) {
+                        newPages.push({ id: `page_${Date.now()}_${i}_${j}`, source: { type: 'pdf', pdfId, pageIndex: j }, rotation: 0, objects: [] });
+                    }
+                } else if (file.type.startsWith('image/')) { newPages.push({ id: `page_${Date.now()}_${i}`, source: { type: 'image', data: file }, rotation: 0, objects: [] }); }
+            }
+            if (newPages.length === 0) { throw new Error("No valid pages created"); }
 
-  const handleMergeConfirm = (sortedFiles: MergeFileData[]) => {
-    setSortedMergeFiles(sortedFiles); setShowFileSortModal(false); setView('merge-sort');
-  };
+            const pdfSize = Object.values(pdfAssets).reduce((acc, blob) => acc + blob.size, 0);
+            const imagesSize = newPages.reduce((acc, p) => acc + (p.source.type === 'image' ? p.source.data.size : 0), 0);
+            const totalSize = pdfSize + imagesSize;
 
-  const handleMergeSave = async (project: StoredProject) => {
-    await dbService.saveProject(project); setCurrentProject(project); setView('editor'); loadProjects();
-  };
+            const newProject: StoredProject = { id: `proj_${Date.now()}`, name: sortedFiles.length === 1 ? sortedFiles[0].name : `新專案-${new Date().toLocaleDateString()}`, pages: newPages, pdfAssets: pdfAssets, timestamp: Date.now(), fileSize: totalSize };
+            await dbService.saveProject(newProject);
+            setCurrentProject(newProject);
+            setView('editor');
+            loadProjects();
+        } catch (e) { console.error("Error creating project:", e); alert("無法開啟檔案 (可能格式不支援或已損壞)"); } finally { setIsAppLoading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
+    };
 
-  const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm("確定要刪除此專案嗎？此動作無法復原。")) { await dbService.deleteProject(id); loadProjects(); }
-  };
+    const handleMergeSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files;
+        if (files && files.length > 0) { setMergeFiles(Array.from(files)); setShowFileSortModal(true); }
+        if (mergeInputRef.current) mergeInputRef.current.value = '';
+    };
 
-  const handleOpenProject = async (id: string) => {
-    const project = await dbService.getProjectData(id);
-    if (project) { setCurrentProject(project); setView('editor'); } else { alert("找不到專案資料"); }
-  };
+    const handleMergeConfirm = (sortedFiles: MergeFileData[]) => {
+        setSortedMergeFiles(sortedFiles); setShowFileSortModal(false); setView('merge-sort');
+    };
 
-  const handleHome = () => { setView('home'); setCurrentProject(null); loadProjects(); };
+    const handleMergeSave = async (project: StoredProject) => {
+        await dbService.saveProject(project); setCurrentProject(project); setView('editor'); loadProjects();
+    };
 
-  return (
-    <>
-      {isAppLoading && (
-            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-50">
-                <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-500"></div>
-                <p className="text-white mt-4 font-light tracking-wider">正在建立專案...</p>
-            </div>
-      )}
+    const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (confirm("確定要刪除此專案嗎？此動作無法復原。")) { await dbService.deleteProject(id); loadProjects(); }
+    };
 
-      {view === 'home' && (
-        <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10 relative overflow-hidden selection:bg-indigo-500 selection:text-white">
-            {/* Background Effects */}
-            <div className="fixed inset-0 z-0 pointer-events-none">
-                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-900/20 blur-[120px]"></div>
-                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-blue-900/20 blur-[120px]"></div>
-            </div>
+    const handleOpenProject = async (id: string) => {
+        const project = await dbService.getProjectData(id);
+        if (project) {
+            // Normalize pages for legacy data
+            project.pages = project.pages.map((p: any) => {
+                if (p.source) return p;
+                return { ...p, source: { type: 'image', data: p.data } };
+            });
+            setCurrentProject(project);
+            setView('editor');
+        } else { alert("找不到專案資料"); }
+    };
 
-            <div className="max-w-7xl mx-auto relative z-10">
-                {/* Header Section */}
-                <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
-                    <div className="flex items-center gap-4 group">
-                        <div className="w-12 h-12 bg-gradient-to-tr from-indigo-600 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/30 transform group-hover:rotate-3 transition-transform duration-300">
-                             <FileIcon className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                             <h1 className="text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">PDF 編輯工具</h1>
-                             <p className="text-slate-500 text-sm mt-1">輕鬆分割、合併與編輯您的 PDF 文件</p>
-                        </div>
+    const handleHome = () => { setView('home'); setCurrentProject(null); loadProjects(); };
+
+    return (
+        <>
+            {isAppLoading && (
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-50">
+                    <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-500"></div>
+                    <p className="text-white mt-4 font-light tracking-wider">正在建立專案...</p>
+                </div>
+            )}
+
+            {view === 'home' && (
+                <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10 relative overflow-hidden selection:bg-indigo-500 selection:text-white">
+                    {/* Background Effects */}
+                    <div className="fixed inset-0 z-0 pointer-events-none">
+                        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-900/20 blur-[120px]"></div>
+                        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-blue-900/20 blur-[120px]"></div>
                     </div>
-                    <div className="flex gap-4 w-full md:w-auto">
-                         <button 
-                            onClick={() => mergeInputRef.current?.click()}
-                            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 rounded-xl transition-all duration-200 text-sm font-medium group shadow-sm hover:shadow-md"
-                        >
-                            <MergeIcon className="w-5 h-5 text-slate-400 group-hover:text-indigo-400 transition-colors" />
-                            <span className="text-slate-300 group-hover:text-white">合併 PDF</span>
-                        </button>
-                        <button 
-                            onClick={() => fileInputRef.current?.click()}
-                            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_25px_rgba(79,70,229,0.5)] transition-all duration-200 transform hover:-translate-y-0.5 text-sm font-bold border border-indigo-500/50"
-                        >
-                            <PlusIcon className="w-5 h-5" />
-                            <span>新專案</span>
-                        </button>
-                    </div>
-                </header>
 
-                {/* Projects Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {projects.map((project) => (
-                        <div 
-                            key={project.id} 
-                            onClick={() => handleOpenProject(project.id)}
-                            className="group bg-slate-900/80 backdrop-blur-sm rounded-2xl border border-slate-800 p-0 hover:border-indigo-500/50 hover:shadow-xl hover:shadow-indigo-500/10 transition-all duration-300 cursor-pointer relative overflow-hidden flex flex-col h-64"
-                        >
-                            {/* Top Preview Area (Simulated) */}
-                            <div className="flex-1 bg-slate-950/50 relative overflow-hidden p-6 flex items-center justify-center">
-                                <div className="w-24 h-32 bg-white/5 border border-white/10 rounded shadow-2xl transform group-hover:scale-105 group-hover:-rotate-2 transition-transform duration-500 flex flex-col">
-                                     <div className="h-2 w-full bg-indigo-500/20 border-b border-indigo-500/10"></div>
-                                     <div className="flex-1 p-2 space-y-2">
-                                         <div className="h-1 w-3/4 bg-white/10 rounded"></div>
-                                         <div className="h-1 w-1/2 bg-white/10 rounded"></div>
-                                         <div className="h-1 w-full bg-white/5 rounded"></div>
-                                         <div className="h-1 w-full bg-white/5 rounded"></div>
-                                     </div>
+                    <div className="max-w-7xl mx-auto relative z-10">
+                        {/* Header Section */}
+                        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
+                            <div className="flex items-center gap-4 group">
+                                <div className="w-12 h-12 bg-gradient-to-tr from-indigo-600 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/30 transform group-hover:rotate-3 transition-transform duration-300">
+                                    <FileIcon className="w-6 h-6 text-white" />
                                 </div>
-                                {/* Floating Actions */}
-                                <button 
-                                    onClick={(e) => handleDeleteProject(project.id, e)}
-                                    className="absolute top-3 right-3 p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100 translate-y-[-10px] group-hover:translate-y-0"
-                                    title="刪除專案"
+                                <div>
+                                    <h1 className="text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">PDF 編輯工具</h1>
+                                    <p className="text-slate-500 text-sm mt-1">輕鬆分割、合併與編輯您的 PDF 文件</p>
+                                </div>
+                            </div>
+                            <div className="flex gap-4 w-full md:w-auto">
+                                <button
+                                    onClick={() => mergeInputRef.current?.click()}
+                                    className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 rounded-xl transition-all duration-200 text-sm font-medium group shadow-sm hover:shadow-md"
                                 >
-                                    <TrashIcon className="w-4 h-4" />
+                                    <MergeIcon className="w-5 h-5 text-slate-400 group-hover:text-indigo-400 transition-colors" />
+                                    <span className="text-slate-300 group-hover:text-white">合併 PDF</span>
+                                </button>
+                                <button
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_25px_rgba(79,70,229,0.5)] transition-all duration-200 transform hover:-translate-y-0.5 text-sm font-bold border border-indigo-500/50"
+                                >
+                                    <PlusIcon className="w-5 h-5" />
+                                    <span>新專案</span>
                                 </button>
                             </div>
-                            
-                            {/* Bottom Info Area */}
-                            <div className="p-4 bg-slate-900 border-t border-slate-800 group-hover:border-indigo-500/20 transition-colors">
-                                <h3 className="font-bold text-base mb-1 truncate text-slate-200 group-hover:text-indigo-300 transition-colors">{project.name}</h3>
-                                <div className="grid grid-cols-2 gap-2 mt-3">
-                                     <div className="flex flex-col gap-0.5">
-                                         <span className="text-[10px] uppercase tracking-wider text-slate-600 font-semibold">編輯時間</span>
-                                         <span className="text-xs text-slate-400 font-medium">{formatDate(project.timestamp).split(' ')[0]}</span>
-                                         <span className="text-[10px] text-slate-500">{formatDate(project.timestamp).split(' ')[1]}</span>
-                                     </div>
-                                     <div className="flex flex-col gap-0.5 items-end">
-                                          <span className="text-[10px] uppercase tracking-wider text-slate-600 font-semibold">資訊</span>
-                                          <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
-                                              {project.pageCount} 頁
-                                          </span>
-                                          <span className="text-[10px] text-slate-500">{formatBytes(project.fileSize)}</span>
-                                     </div>
+                        </header>
+
+                        {/* Projects Grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                            {projects.map((project) => (
+                                <div
+                                    key={project.id}
+                                    onClick={() => handleOpenProject(project.id)}
+                                    className="group bg-slate-900/80 backdrop-blur-sm rounded-2xl border border-slate-800 p-0 hover:border-indigo-500/50 hover:shadow-xl hover:shadow-indigo-500/10 transition-all duration-300 cursor-pointer relative overflow-hidden flex flex-col h-64"
+                                >
+                                    {/* Top Preview Area (Simulated) */}
+                                    <div className="flex-1 bg-slate-950/50 relative overflow-hidden p-6 flex items-center justify-center">
+                                        <div className="w-24 h-32 bg-white/5 border border-white/10 rounded shadow-2xl transform group-hover:scale-105 group-hover:-rotate-2 transition-transform duration-500 flex flex-col">
+                                            <div className="h-2 w-full bg-indigo-500/20 border-b border-indigo-500/10"></div>
+                                            <div className="flex-1 p-2 space-y-2">
+                                                <div className="h-1 w-3/4 bg-white/10 rounded"></div>
+                                                <div className="h-1 w-1/2 bg-white/10 rounded"></div>
+                                                <div className="h-1 w-full bg-white/5 rounded"></div>
+                                                <div className="h-1 w-full bg-white/5 rounded"></div>
+                                            </div>
+                                        </div>
+                                        {/* Floating Actions */}
+                                        <button
+                                            onClick={(e) => handleDeleteProject(project.id, e)}
+                                            className="absolute top-3 right-3 p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100 translate-y-[-10px] group-hover:translate-y-0"
+                                            title="刪除專案"
+                                        >
+                                            <TrashIcon className="w-4 h-4" />
+                                        </button>
+                                    </div>
+
+                                    {/* Bottom Info Area */}
+                                    <div className="p-4 bg-slate-900 border-t border-slate-800 group-hover:border-indigo-500/20 transition-colors">
+                                        <h3 className="font-bold text-base mb-1 truncate text-slate-200 group-hover:text-indigo-300 transition-colors">{project.name}</h3>
+                                        <div className="grid grid-cols-2 gap-2 mt-3">
+                                            <div className="flex flex-col gap-0.5">
+                                                <span className="text-[10px] uppercase tracking-wider text-slate-600 font-semibold">編輯時間</span>
+                                                <span className="text-xs text-slate-400 font-medium">{formatDate(project.timestamp).split(' ')[0]}</span>
+                                                <span className="text-[10px] text-slate-500">{formatDate(project.timestamp).split(' ')[1]}</span>
+                                            </div>
+                                            <div className="flex flex-col gap-0.5 items-end">
+                                                <span className="text-[10px] uppercase tracking-wider text-slate-600 font-semibold">資訊</span>
+                                                <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
+                                                    {project.pageCount} 頁
+                                                </span>
+                                                <span className="text-[10px] text-slate-500">{formatBytes(project.fileSize)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
+                            ))}
+
+                            {projects.length === 0 && (
+                                <div className="col-span-full flex flex-col items-center justify-center py-32 text-slate-500 border border-dashed border-slate-800 rounded-3xl bg-slate-900/30">
+                                    <div className="bg-slate-800 p-5 rounded-full mb-6 shadow-inner ring-1 ring-white/5">
+                                        <FolderOpenIcon className="w-10 h-10 opacity-40" />
+                                    </div>
+                                    <p className="text-lg font-medium text-slate-400">尚無專案</p>
+                                    <button onClick={() => fileInputRef.current?.click()} className="mt-4 text-sm text-indigo-400 hover:text-indigo-300 underline underline-offset-4">
+                                        立即建立新專案
+                                    </button>
+                                </div>
+                            )}
                         </div>
-                    ))}
-                    
-                    {projects.length === 0 && (
-                        <div className="col-span-full flex flex-col items-center justify-center py-32 text-slate-500 border border-dashed border-slate-800 rounded-3xl bg-slate-900/30">
-                            <div className="bg-slate-800 p-5 rounded-full mb-6 shadow-inner ring-1 ring-white/5">
-                                 <FolderOpenIcon className="w-10 h-10 opacity-40" />
-                            </div>
-                            <p className="text-lg font-medium text-slate-400">尚無專案</p>
-                            <button onClick={() => fileInputRef.current?.click()} className="mt-4 text-sm text-indigo-400 hover:text-indigo-300 underline underline-offset-4">
-                                立即建立新專案
-                            </button>
-                        </div>
-                    )}
+                    </div>
+                    <input type="file" ref={fileInputRef} multiple accept="application/pdf,image/*" className="hidden" onChange={handleCreateProject} />
+                    <input type="file" ref={mergeInputRef} multiple accept="application/pdf" className="hidden" onChange={handleMergeSelect} />
+                    {showFileSortModal && <FileSortModal files={mergeFiles} onCancel={() => setShowFileSortModal(false)} onConfirm={handleMergeConfirm} />}
                 </div>
-            </div>
-            <input type="file" ref={fileInputRef} multiple accept="application/pdf,image/*" className="hidden" onChange={handleCreateProject} />
-            <input type="file" ref={mergeInputRef} multiple accept="application/pdf" className="hidden" onChange={handleMergeSelect} />
-            {showFileSortModal && <FileSortModal files={mergeFiles} onCancel={() => setShowFileSortModal(false)} onConfirm={handleMergeConfirm} />}
-        </div>
-      )}
+            )}
 
-      {view === 'editor' && currentProject && (
-        <EditorPage 
-            project={currentProject} 
-            onSave={async (proj, newName) => { if(newName) proj.name = newName; await dbService.saveProject(proj); loadProjects(); }}
-            onClose={handleHome}
-        />
-      )}
+            {view === 'editor' && currentProject && (
+                <EditorPage
+                    project={currentProject}
+                    onSave={async (proj, newName) => { if (newName) proj.name = newName; await dbService.saveProject(proj); loadProjects(); }}
+                    onClose={handleHome}
+                />
+            )}
 
-      {view === 'merge-sort' && (
-        <MergeSortPage sortedFiles={sortedMergeFiles} onSave={handleMergeSave} onCancel={() => setView('home')} />
-      )}
-    </>
-  );
+            {view === 'merge-sort' && (
+                <MergeSortPage sortedFiles={sortedMergeFiles} onSave={handleMergeSave} onCancel={() => setView('home')} />
+            )}
+        </>
+    );
 };
 
 export default App;

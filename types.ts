@@ -10,13 +10,13 @@ export interface ProjectMetadata {
 export type DrawingTool = 'line' | 'arrow' | 'rect' | 'circle' | 'text' | 'image-placeholder' | 'stamp';
 
 export interface StampConfig {
-    id: string;
-    name: string; // For display in menu
-    text: string;
-    textColor: string;
-    backgroundColor: string;
-    fontSize: number;
-    shortcutKey: string; // Single char or key code
+  id: string;
+  name: string; // For display in menu
+  text: string;
+  textColor: string;
+  backgroundColor: string;
+  fontSize: number;
+  shortcutKey: string; // Single char or key code
 }
 
 export interface EditorObject {
@@ -35,17 +35,22 @@ export interface EditorObject {
   isStamp?: boolean;
 }
 
+export type PageSource =
+  | { type: 'pdf'; pdfId: string; pageIndex: number } // pageIndex is 1-based
+  | { type: 'image'; data: Blob };
+
 export interface PageData {
-    id: string;
-    data: Blob;
-    rotation: 0 | 90 | 180 | 270;
-    objects: EditorObject[];
+  id: string;
+  source: PageSource;
+  rotation: 0 | 90 | 180 | 270;
+  objects: EditorObject[];
 }
 
 export interface StoredProject {
   id: string;
   name: string;
   pages: PageData[];
+  pdfAssets?: Record<string, Blob>; // Map of pdfId -> Blob
   timestamp: number;
   fileSize?: number;
 }
@@ -60,6 +65,7 @@ export interface EditorPageState {
   id: string;
   name: string;
   pages: PageData[];
+  pdfAssets: Record<string, Blob>;
 }
 
 export enum CompressionQuality {
