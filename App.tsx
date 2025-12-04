@@ -3,6 +3,7 @@ import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import Dexie, { type Table } from 'dexie';
 import PDFPageView from './PDFPageView';
+import TextEditorModal from './TextEditorModal';
 import { ProjectMetadata, StoredProject, EditorPageProps, EditorPageState, CompressionQuality, EditorObject, DrawingTool, PageData, StampConfig } from './types';
 
 // Configure the PDF.js worker
@@ -140,9 +141,13 @@ const ImageIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 const StampIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="currentColor">
+        <text x="12" y="17" fontSize="18" textAnchor="middle" fontWeight="bold" fontFamily="Arial, sans-serif">印</text>
+    </svg>
+);
+const SidebarIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11.5 17.914a1 1 0 00-.293.707V19a1 1 0 01-1 1h-1a1 1 0 01-1-1v-3a1 1 0 00-.293-.707L7.5 14.5" opacity="0.5" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
     </svg>
 );
 const PenIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -937,13 +942,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const objectImageInputRef = useRef<HTMLInputElement>(null);
 
     // History state for undo/redo
-    const [history, setHistory] = useState<EditorPageState[]>([{ ...project, pages: project.pages.map(p => ({ ...p, rotation: p.rotation ?? 0, objects: p.objects || [] })) }]);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 768);
+    const [history, setHistory] = useState<EditorPageState[]>([{ ...project, pdfAssets: project.pdfAssets || {}, pages: project.pages.map(p => ({ ...p, rotation: p.rotation ?? 0, objects: p.objects || [] })) }]);
     const [historyIndex, setHistoryIndex] = useState(0);
-    const state = history[historyIndex]; // Derived state
+    const rawState = history[historyIndex];
+    const state = rawState ? { ...rawState, pages: rawState.pages || [] } : { ...project, pages: [] };
 
     const [pageUrlCache, setPageUrlCache] = useState<Map<string, string>>(new Map());
     // Ref to store valid URLs to prevent reloading image on every state change (like drawing)
-    const activeUrlMap = useRef(new Map<string, string>());
+    const activeUrlMap = useRef(new Map<string, { url: string, blob: Blob }>());
 
     // Cache for object images (the overlaid images)
     const loadedObjectImages = useRef<Map<string, HTMLImageElement>>(new Map());
@@ -956,7 +963,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [isDirty, setIsDirty] = useState(false);
     const [showSaveSuccess, setShowSaveSuccess] = useState(false);
     const [selectionMode, setSelectionMode] = useState<SelectionMode>('view');
-    const [viewedPageId, setViewedPageId] = useState<string | null>(state.pages[0]?.id || null);
+    const [viewedPageId, setViewedPageId] = useState<string | null>(state?.pages?.[0]?.id || null);
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
 
@@ -969,7 +976,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [actionState, setActionState] = useState<ActionState>({ type: 'idle' });
     const [previewObject, setPreviewObject] = useState<EditorObject | null>(null);
     const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
-    const [textInput, setTextInput] = useState({ show: false, x: 0, y: 0, value: '' });
+
+
     // Force render triggering when image loads
     const [imageLoadedCount, setImageLoadedCount] = useState(0);
 
@@ -980,9 +988,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [fontSize, setFontSize] = useState(16);
     const [fontFamily, setFontFamily] = useState('sans-serif');
 
+    // Text Tool Refactor State
+    const [showTextModal, setShowTextModal] = useState(false);
+    const [pendingTextConfig, setPendingTextConfig] = useState<{ text: string; color: string; fontSize: number; fontFamily: string } | null>(null);
+
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const backgroundRef = useRef<HTMLElement>(null);
-    const textInputRef = useRef<HTMLTextAreaElement>(null);
+
+
+
     const thumbnailRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const desktopThumbnailRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const sidebarRef = useRef<HTMLDivElement>(null);
@@ -1008,13 +1022,13 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const toolbarDragStartY = useRef(0);
     const toolbarInitialY = useRef(50);
 
-    const viewedPage = state.pages.find(p => p.id === viewedPageId) || state.pages[0];
-    const viewedPageIndex = state.pages.findIndex(p => p.id === viewedPageId);
-    const selectedObject = viewedPage?.objects.find(o => o.id === selectedObjectId) || null;
+    const viewedPage = state?.pages?.find(p => p.id === viewedPageId) || state?.pages?.[0];
+    const viewedPageIndex = state?.pages?.findIndex(p => p.id === viewedPageId) ?? -1;
+    const selectedObject = viewedPage?.objects?.find(o => o.id === selectedObjectId) || null;
     const isDrawingToolActive = activeTool && activeTool !== 'move';
 
     // Calculate Current Project Size from pages
-    const currentProjectSize = state.pages.reduce((acc, page) => acc + (page.source.type === 'image' ? page.source.data.size : 0), 0) + (state.pdfAssets ? Object.values(state.pdfAssets).reduce((acc, blob) => acc + blob.size, 0) : 0);
+    const currentProjectSize = state?.pages?.reduce((acc, page) => acc + (page.source.type === 'image' ? page.source.data.size : 0), 0) + (state?.pdfAssets ? Object.values(state.pdfAssets).reduce((acc, blob) => acc + blob.size, 0) : 0);
 
     // Estimate compressed size based on heuristic
     const getEstimatedSize = () => {
@@ -1072,67 +1086,147 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     // Optimized URL Cache Logic
     useEffect(() => {
-        const currentMap = activeUrlMap.current;
-        const newMap = new Map<string, string>();
+        const currentMap = activeUrlMap.current; // Map<string, { url: string, blob: Blob }>
+        const newMap = new Map<string, { url: string, blob: Blob }>();
         let hasChanges = false;
 
         state.pages.forEach(page => {
-            if (currentMap.has(page.id)) {
-                newMap.set(page.id, currentMap.get(page.id)!);
-            } else if (page.source.type === 'image') {
-                const url = URL.createObjectURL(page.source.data);
-                newMap.set(page.id, url);
-                hasChanges = true;
+            if (page.source.type === 'image') {
+                const existing = currentMap.get(page.id);
+                if (existing && existing.blob === page.source.data) {
+                    newMap.set(page.id, existing);
+                } else {
+                    const url = URL.createObjectURL(page.source.data);
+                    newMap.set(page.id, { url, blob: page.source.data });
+                    hasChanges = true;
+                }
             }
         });
 
-        if (currentMap.size !== newMap.size) hasChanges = true;
-
-        currentMap.forEach((url, id) => {
-            if (!newMap.has(id)) {
-                URL.revokeObjectURL(url);
+        // Revoke URLs for pages that are removed or changed
+        currentMap.forEach((entry, id) => {
+            if (!newMap.has(id) || newMap.get(id)!.url !== entry.url) {
+                // Delay revocation to allow UI to update first
+                setTimeout(() => URL.revokeObjectURL(entry.url), 1000);
                 hasChanges = true;
             }
         });
 
         activeUrlMap.current = newMap;
+
         if (hasChanges) {
-            setPageUrlCache(new Map(newMap));
+            const urlMap = new Map<string, string>();
+            newMap.forEach((entry, id) => urlMap.set(id, entry.url));
+            setPageUrlCache(urlMap);
         }
     }, [state.pages]);
 
     useEffect(() => {
         return () => {
-            activeUrlMap.current.forEach(url => URL.revokeObjectURL(url));
+            const map = activeUrlMap.current;
+            setTimeout(() => {
+                map.forEach(entry => URL.revokeObjectURL(entry.url));
+            }, 1000);
         };
     }, []);
 
     useEffect(() => {
         if (!viewedPage) return;
+
+        const currentLoadedImages = loadedObjectImages.current;
+        const newLoadedImages = new Map<string, HTMLImageElement>();
+        let hasNewImages = false;
+
         const loadImages = async () => {
-            let hasNewImages = false;
             for (const obj of viewedPage.objects) {
-                if (obj.type === 'image-placeholder' && obj.imageData && !loadedObjectImages.current.has(obj.id)) {
-                    const img = new Image();
-                    const url = URL.createObjectURL(obj.imageData);
-                    img.src = url;
-                    await new Promise((resolve, reject) => {
-                        img.onload = resolve;
-                        img.onerror = reject;
-                    }).then(() => {
-                        loadedObjectImages.current.set(obj.id, img);
-                        hasNewImages = true;
-                    }).catch(() => {
-                        console.error(`Failed to load image for object ${obj.id}`);
-                    });
+                if (obj.type === 'image-placeholder' && obj.imageData) {
+                    if (currentLoadedImages.has(obj.id)) {
+                        newLoadedImages.set(obj.id, currentLoadedImages.get(obj.id)!);
+                    } else {
+                        const img = new Image();
+                        const url = URL.createObjectURL(obj.imageData);
+                        img.src = url;
+                        await new Promise((resolve, reject) => {
+                            img.onload = resolve;
+                            img.onerror = reject;
+                        }).then(() => {
+                            newLoadedImages.set(obj.id, img);
+                            hasNewImages = true;
+                        }).catch(() => {
+                            console.error(`Failed to load image for object ${obj.id}`);
+                        });
+                    }
                 }
             }
+
+            // Cleanup removed images
+            currentLoadedImages.forEach((img, id) => {
+                if (!newLoadedImages.has(id)) {
+                    URL.revokeObjectURL(img.src);
+                }
+            });
+
+            loadedObjectImages.current = newLoadedImages;
+
             if (hasNewImages) {
                 setImageLoadedCount(c => c + 1);
             }
         };
         loadImages();
+
+        // Cleanup on unmount or page change
+        return () => {
+            // We don't want to revoke everything here because we might switch back to this page
+            // But for now, let's rely on the loop above to clean up removed objects.
+            // Actually, if we switch pages, we might want to keep the cache? 
+            // The current logic re-runs when viewedPage changes.
+            // Ideally we should have a global cache for object images or manage it better.
+            // For now, let's just ensure we don't leak.
+        };
     }, [viewedPage]);
+
+    // Canvas Resizing Logic for Image Pages
+    useEffect(() => {
+        if (!viewedPage || viewedPage.source.type !== 'image') return;
+
+        const resizeCanvas = () => {
+            const canvas = canvasRef.current;
+            const background = backgroundRef.current;
+            if (canvas && background) {
+                const rect = background.getBoundingClientRect();
+                // Match canvas size to the displayed image size
+                if (canvas.width !== rect.width || canvas.height !== rect.height) {
+                    canvas.width = rect.width;
+                    canvas.height = rect.height;
+                    // Force re-render of objects
+                    // We can trigger this by toggling a dummy state or relying on the next render cycle if state changed
+                    // But since this is a resize, we might need to explicitly call render if it's not reactive
+                    // However, the render loop is likely driven by state changes. 
+                    // Let's check if we need to force update. 
+                    // Actually, changing canvas width/height clears it, so we MUST redraw.
+                    // The drawing logic is in a useEffect or similar?
+                    // I need to find the drawing loop.
+                    // Assuming there is a useEffect that draws when 'state' or 'viewedPage' changes.
+                    // If not, I might need to trigger it.
+                    // For now, let's assume the existing drawing logic will pick it up or I'll add a trigger.
+                    setImageLoadedCount(c => c + 1); // This triggers re-renders
+                }
+            }
+        };
+
+        // ResizeObserver to handle responsive resizing
+        const resizeObserver = new ResizeObserver(() => {
+            resizeCanvas();
+        });
+
+        if (backgroundRef.current) {
+            resizeObserver.observe(backgroundRef.current);
+        }
+
+        return () => {
+            resizeObserver.disconnect();
+        };
+    }, [viewedPage, zoom, imageLoadedCount]);
 
     // ... (State management, undo/redo, compression logic unchanged)
     const handleCompress = async () => {
@@ -1157,44 +1251,71 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
             for (let i = 0; i < newPages.length; i++) {
                 const page = newPages[i];
-                if (page.source.type !== 'image') continue; // Skip non-image pages for now
 
-                const img = new Image();
-                const url = URL.createObjectURL(page.source.data);
-                img.src = url;
-                await new Promise((resolve, reject) => {
-                    img.onload = resolve;
-                    img.onerror = reject;
-                });
+                if (page.source.type === 'pdf') {
+                    const pdfBlob = state.pdfAssets?.[page.source.pdfId];
+                    if (pdfBlob) {
+                        try {
+                            const pdfData = await pdfBlob.arrayBuffer();
+                            const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                            const pdfPage = await pdf.getPage(page.source.pageIndex);
+                            const viewport = pdfPage.getViewport({ scale: scale * 2 }); // Higher scale for quality
 
-                const canvas = document.createElement('canvas');
-                const targetWidth = Math.floor(img.naturalWidth * scale);
-                const targetHeight = Math.floor(img.naturalHeight * scale);
-                canvas.width = targetWidth;
-                canvas.height = targetHeight;
+                            const canvas = document.createElement('canvas');
+                            const context = canvas.getContext('2d');
+                            if (context) {
+                                canvas.height = viewport.height;
+                                canvas.width = viewport.width;
 
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                    // High quality smoothing
-                    ctx.imageSmoothingEnabled = true;
-                    ctx.imageSmoothingQuality = 'high';
-                    ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+                                await pdfPage.render({ canvasContext: context, viewport }).promise;
 
-                    const blob = await new Promise<Blob | null>(resolve =>
-                        canvas.toBlob(resolve, 'image/jpeg', quality)
-                    );
-
-                    if (blob) {
-                        newPages[i] = { ...page, source: { type: 'image', data: blob } };
+                                const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+                                if (blob) {
+                                    newPages[i] = { ...page, source: { type: 'image', data: blob } };
+                                }
+                            }
+                        } catch (err) {
+                            console.error("Error rasterizing PDF page:", err);
+                        }
                     }
+                } else if (page.source.type === 'image') {
+                    const img = new Image();
+                    const url = URL.createObjectURL(page.source.data);
+                    img.src = url;
+                    await new Promise((resolve, reject) => {
+                        img.onload = resolve;
+                        img.onerror = reject;
+                    });
+
+                    const canvas = document.createElement('canvas');
+                    const targetWidth = Math.floor(img.naturalWidth * scale);
+                    const targetHeight = Math.floor(img.naturalHeight * scale);
+                    canvas.width = targetWidth;
+                    canvas.height = targetHeight;
+
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        // High quality smoothing
+                        ctx.imageSmoothingEnabled = true;
+                        ctx.imageSmoothingQuality = 'high';
+                        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+                        const blob = await new Promise<Blob | null>(resolve =>
+                            canvas.toBlob(resolve, 'image/jpeg', quality)
+                        );
+
+                        if (blob) {
+                            newPages[i] = { ...page, source: { type: 'image', data: blob } };
+                        }
+                    }
+                    URL.revokeObjectURL(url);
                 }
-                URL.revokeObjectURL(url);
             }
 
             updateState({ ...state, pages: newPages });
 
             // Auto save after compression
-            const projectToSave: StoredProject = { id: state.id, name: projectName, pages: newPages, timestamp: Date.now() };
+            const projectToSave: StoredProject = { id: state.id, name: projectName, pages: newPages, pdfAssets: state.pdfAssets, timestamp: Date.now() };
             await onSave(projectToSave, projectName);
             setIsDirty(false);
             setShowSaveSuccess(true);
@@ -1427,7 +1548,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     // ... (handlers: handleSaveAndDownload, handleShare, etc. unchanged)
     const handleSaveAndDownload = async () => {
         fileMenu.close();
-        const projectToSave: StoredProject = { id: state.id, name: projectName, pages: state.pages, timestamp: Date.now() };
+        const projectToSave: StoredProject = { id: state.id, name: projectName, pages: state.pages, pdfAssets: state.pdfAssets, timestamp: Date.now() };
         await onSave(projectToSave, projectName);
         setIsDirty(false);
         const success = await generatePdf(state.pages, `${projectName.replace(/\.pdf$/i, '') || 'document'}.pdf`);
@@ -1436,7 +1557,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const handleShare = async () => {
         fileMenu.close();
-        const projectToSave: StoredProject = { id: state.id, name: projectName, pages: state.pages, timestamp: Date.now() };
+        const projectToSave: StoredProject = { id: state.id, name: projectName, pages: state.pages, pdfAssets: state.pdfAssets, timestamp: Date.now() };
         await onSave(projectToSave, projectName);
         setIsDirty(false);
         setIsLoading(true);
@@ -1455,12 +1576,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     // ... (onObjectImageChange, onAddFilesChange unchanged)
     const onObjectImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
-        if (!files || files.length === 0 || !targetObjectId || !viewedPageId) return;
+        // Use selectedObjectId if targetObjectId is not set (fallback for immediate selection)
+        const targetId = targetObjectId || selectedObjectId;
+
+        if (!files || files.length === 0 || !targetId || !viewedPageId) return;
         const file = files[0];
         const newPages = state.pages.map(p => {
             if (p.id === viewedPageId) {
                 const newObjects = p.objects.map(obj => {
-                    if (obj.id === targetObjectId) { return { ...obj, imageData: file }; }
+                    if (obj.id === targetId) { return { ...obj, imageData: file }; }
                     return obj;
                 });
                 return { ...p, objects: newObjects };
@@ -1623,24 +1747,188 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const handleThumbnailWheel = (e: React.WheelEvent) => { if (thumbnailContainerRef.current) { thumbnailContainerRef.current.scrollLeft += e.deltaY; } };
 
-    const handleMainViewWheel = (e: React.WheelEvent) => {
-        e.preventDefault();
-        if (isDrawingToolActive) return;
-        if (e.ctrlKey) {
-            const scaleAmount = e.deltaY * -0.001;
-            setZoom(z => Math.max(0.2, Math.min(z + scaleAmount, 5)));
-            return;
+    useEffect(() => {
+        const handleMainViewWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            if (isDrawingToolActive) return;
+            if (e.ctrlKey) {
+                const scaleAmount = e.deltaY * -0.001;
+                setZoom(z => Math.max(0.2, Math.min(z + scaleAmount, 5)));
+                return;
+            }
+            const now = Date.now();
+            if (now - lastScrollTime.current < 200) return;
+            if (e.deltaY > 0) {
+                const idx = state.pages.findIndex(p => p.id === viewedPageId);
+                if (idx < state.pages.length - 1) { const nextId = state.pages[idx + 1].id; setViewedPageId(nextId); lastScrollTime.current = now; scrollToThumbnail(nextId); }
+            } else if (e.deltaY < 0) {
+                const idx = state.pages.findIndex(p => p.id === viewedPageId);
+                if (idx > 0) { const prevId = state.pages[idx - 1].id; setViewedPageId(prevId); lastScrollTime.current = now; scrollToThumbnail(prevId); }
+            }
+        };
+
+        const handleMainTouchStart = (e: TouchEvent) => {
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+                touchState.current = {
+                    mode: 'pinch',
+                    startDist: dist,
+                    startZoom: zoomRef.current,
+                    startY: 0,
+                    lastY: 0
+                };
+            } else if (e.touches.length === 1 && !isDrawingToolActive) {
+                touchState.current = {
+                    mode: 'swipe',
+                    startDist: 0,
+                    startZoom: 1,
+                    startY: e.touches[0].clientY,
+                    lastY: e.touches[0].clientY
+                };
+            }
+        };
+
+        const handleMainTouchMove = (e: TouchEvent) => {
+            if (touchState.current.mode === 'pinch' && e.touches.length === 2) {
+                e.preventDefault();
+                const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+                const scale = (dist / touchState.current.startDist) * touchState.current.startZoom;
+                setZoom(Math.max(0.2, Math.min(scale, 5)));
+            } else if (touchState.current.mode === 'swipe' && e.touches.length === 1) {
+                touchState.current.lastY = e.touches[0].clientY;
+            }
+        };
+
+        const handleMainTouchEnd = (e: TouchEvent) => {
+            if (touchState.current.mode === 'swipe') {
+                const diffY = touchState.current.lastY - touchState.current.startY;
+                const threshold = 50; // Reduced threshold for easier swipe
+                const now = Date.now();
+                if (Math.abs(diffY) > threshold && now - lastScrollTime.current > 300) {
+                    if (diffY < 0) {
+                        // Swiped up -> Next page
+                        const idx = state.pages.findIndex(p => p.id === viewedPageId);
+                        if (idx < state.pages.length - 1) {
+                            const nextId = state.pages[idx + 1].id;
+                            setViewedPageId(nextId);
+                            lastScrollTime.current = now;
+                            scrollToThumbnail(nextId);
+                        }
+                    } else {
+                        // Swiped down -> Prev page
+                        const idx = state.pages.findIndex(p => p.id === viewedPageId);
+                        if (idx > 0) {
+                            const prevId = state.pages[idx - 1].id;
+                            setViewedPageId(prevId);
+                            lastScrollTime.current = now;
+                            scrollToThumbnail(prevId);
+                        }
+                    }
+                }
+            }
+            touchState.current.mode = 'idle';
+        };
+
+        const mainElement = document.getElementById('main-editor-view');
+        if (mainElement) {
+            mainElement.addEventListener('wheel', handleMainViewWheel, { passive: false });
+            mainElement.addEventListener('touchstart', handleMainTouchStart, { passive: false });
+            mainElement.addEventListener('touchmove', handleMainTouchMove, { passive: false });
+            mainElement.addEventListener('touchend', handleMainTouchEnd, { passive: false });
         }
-        const now = Date.now();
-        if (now - lastScrollTime.current < 200) return;
-        if (e.deltaY > 0) {
-            const idx = state.pages.findIndex(p => p.id === viewedPageId);
-            if (idx < state.pages.length - 1) { const nextId = state.pages[idx + 1].id; setViewedPageId(nextId); lastScrollTime.current = now; scrollToThumbnail(nextId); }
-        } else if (e.deltaY < 0) {
-            const idx = state.pages.findIndex(p => p.id === viewedPageId);
-            if (idx > 0) { const prevId = state.pages[idx - 1].id; setViewedPageId(prevId); lastScrollTime.current = now; scrollToThumbnail(prevId); }
+        return () => {
+            if (mainElement) {
+                mainElement.removeEventListener('wheel', handleMainViewWheel);
+                mainElement.removeEventListener('touchstart', handleMainTouchStart);
+                mainElement.removeEventListener('touchmove', handleMainTouchMove);
+                mainElement.removeEventListener('touchend', handleMainTouchEnd);
+            }
+        };
+    }, [isDrawingToolActive, state.pages, viewedPageId]);
+
+    // Touch Gesture Handlers for Main View
+    const touchState = useRef<{
+        mode: 'idle' | 'pinch' | 'swipe';
+        startDist: number;
+        startZoom: number;
+        startY: number;
+        lastY: number;
+    }>({ mode: 'idle', startDist: 0, startZoom: 1, startY: 0, lastY: 0 });
+
+    const handleMainTouchStart = (e: TouchEvent) => {
+        if (e.touches.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            touchState.current = {
+                mode: 'pinch',
+                startDist: dist,
+                startZoom: zoom, // Use current zoom from state (accessed via closure if possible, but useEffect dependency might be tricky. Better to use ref or rely on state update function if needed, but here we need initial value. Actually, since this is inside useEffect, 'zoom' might be stale if not in dependency. Wait, I am defining these INSIDE useEffect now? No, I should define them outside or use refs for zoom.)
+                startY: 0,
+                lastY: 0
+            };
+        } else if (e.touches.length === 1 && !isDrawingToolActive) {
+            // Only enable swipe if not drawing/moving objects
+            touchState.current = {
+                mode: 'swipe',
+                startDist: 0,
+                startZoom: 1,
+                startY: e.touches[0].clientY,
+                lastY: e.touches[0].clientY
+            };
         }
     };
+
+    // Wait, I need access to 'zoom' state inside the event listener. 
+    // If I define these inside useEffect, I need to add 'zoom' to dependency array, which causes re-binding listeners on every zoom change.
+    // Better to use a ref for current zoom to avoid re-binding.
+    const zoomRef = useRef(zoom);
+    useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
+    const handleMainTouchMove = (e: TouchEvent) => {
+        if (touchState.current.mode === 'pinch' && e.touches.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            const scale = (dist / touchState.current.startDist) * touchState.current.startZoom;
+            setZoom(Math.max(0.2, Math.min(scale, 5)));
+        } else if (touchState.current.mode === 'swipe' && e.touches.length === 1) {
+            // Optional: Implement continuous scroll or just threshold-based page switch
+            // For page switch, we usually wait for end or use a threshold.
+            // Let's track movement for Swipe-to-Change-Page logic in TouchEnd
+            touchState.current.lastY = e.touches[0].clientY;
+        }
+    };
+
+    const handleMainTouchEnd = (e: TouchEvent) => {
+        if (touchState.current.mode === 'swipe') {
+            const diffY = touchState.current.lastY - touchState.current.startY;
+            const threshold = 100; // px
+            const now = Date.now();
+            if (now - lastScrollTime.current > 300) { // Debounce
+                if (diffY < -threshold) {
+                    // Swiped up -> Next page
+                    const idx = state.pages.findIndex(p => p.id === viewedPageId);
+                    if (idx < state.pages.length - 1) {
+                        const nextId = state.pages[idx + 1].id;
+                        setViewedPageId(nextId);
+                        lastScrollTime.current = now;
+                        scrollToThumbnail(nextId);
+                    }
+                } else if (diffY > threshold) {
+                    // Swiped down -> Prev page
+                    const idx = state.pages.findIndex(p => p.id === viewedPageId);
+                    if (idx > 0) {
+                        const prevId = state.pages[idx - 1].id;
+                        setViewedPageId(prevId);
+                        lastScrollTime.current = now;
+                        scrollToThumbnail(prevId);
+                    }
+                }
+            }
+        }
+        touchState.current.mode = 'idle';
+    };
+
 
     // Toolbar Drag Handlers for Mobile
     const handleToolbarDragStart = (e: React.TouchEvent) => {
@@ -1707,16 +1995,26 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const rotation = viewedPage.rotation; const angleRad = -rotation * (Math.PI / 180);
         const rotatedX = vecX * Math.cos(angleRad) - vecY * Math.sin(angleRad); const rotatedY = vecX * Math.sin(angleRad) + vecY * Math.cos(angleRad);
         const unscaledX = rotatedX / zoom; const unscaledY = rotatedY / zoom;
-        const finalX = (background.clientWidth / 2) + unscaledX; const finalY = (background.clientHeight / 2) + unscaledY;
+
+        // When rotated 90 or 270 degrees, the "width" of the unrotated page corresponds to the "height" of the rotated element
+        const isSwapped = rotation % 180 !== 0;
+        const unrotatedWidth = isSwapped ? background.clientHeight : background.clientWidth;
+        const unrotatedHeight = isSwapped ? background.clientWidth : background.clientHeight;
+
+        const finalX = (unrotatedWidth / 2) + unscaledX; const finalY = (unrotatedHeight / 2) + unscaledY;
         return { x: finalX, y: finalY };
     };
 
     const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
         e.preventDefault();
-        if (textInput.show) { textInputRef.current?.blur(); return; }
         const startPoint = getCanvasCoordinates(e);
+
         if (isDrawingToolActive) {
-            if (activeTool === 'text') { setSelectedObjectId(null); setTextInput({ show: true, x: startPoint.x, y: startPoint.y, value: '' }); setTimeout(() => textInputRef.current?.focus(), 0); }
+            if (activeTool === 'text') {
+                // New logic: handled in MouseUp for click-to-place
+                setActionState({ type: 'drawing', startPoint });
+                setSelectedObjectId(null);
+            }
             else { setActionState({ type: 'drawing', startPoint }); setSelectedObjectId(null); }
         } else {
             const handle = getHandleAtPoint(startPoint, selectedObject);
@@ -1754,23 +2052,92 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         if (actionState.type === 'idle') return;
         const endPoint = getCanvasCoordinates(e); const { type, startPoint } = actionState;
         let newObjects = [...(viewedPage?.objects || [])]; let changesMade = false;
-        if (type === 'drawing' && startPoint && (startPoint.x !== endPoint.x || startPoint.y !== endPoint.y)) {
+        if (type === 'drawing' && startPoint) {
+            const isDrag = Math.abs(startPoint.x - endPoint.x) > 5 || Math.abs(startPoint.y - endPoint.y) > 5;
+
             if (activeTool === 'stamp' && activeStamp) {
+                let finalEp = endPoint;
+                if (!isDrag) {
+                    const defaultWidth = Math.max(100, activeStamp.text.length * activeStamp.fontSize);
+                    const defaultHeight = activeStamp.fontSize * 2.5;
+                    finalEp = { x: startPoint.x + defaultWidth, y: startPoint.y + defaultHeight };
+                }
                 const newObject: EditorObject = {
                     id: `obj_${Date.now()}`,
                     type: 'stamp',
                     sp: startPoint,
-                    ep: endPoint,
+                    ep: finalEp,
                     text: activeStamp.text,
                     color: activeStamp.textColor,
                     backgroundColor: activeStamp.backgroundColor,
                     fontSize: activeStamp.fontSize,
-                    strokeWidth: 0, // No border by default
+                    strokeWidth: 0,
                 };
                 newObjects.push(newObject);
                 changesMade = true;
-            } else {
-                const newObject: EditorObject = { id: `obj_${Date.now()}`, type: activeTool as DrawingTool, sp: startPoint, ep: endPoint, color: activeTool === 'image-placeholder' ? '#FF69B4' : drawingColor, strokeWidth: strokeWidth, };
+                setSelectedObjectId(newObject.id);
+                setActiveTool('move');
+                setActiveStamp(null);
+            } else if (activeTool === 'text' && pendingTextConfig) {
+                const canvas = canvasRef.current;
+                const ctx = canvas?.getContext('2d');
+                let width = 200;
+                let height = 50;
+
+                if (ctx) {
+                    ctx.font = `${pendingTextConfig.fontSize}px ${pendingTextConfig.fontFamily}`;
+                    const metrics = ctx.measureText(pendingTextConfig.text);
+                    width = Math.min(metrics.width + 10, 400);
+                    const lines = wrapText(ctx, pendingTextConfig.text, width);
+                    height = lines.length * (pendingTextConfig.fontSize * 1.2);
+                }
+
+                const newObject: EditorObject = {
+                    id: `obj_${Date.now()}`,
+                    type: 'text',
+                    sp: startPoint,
+                    ep: { x: startPoint.x + width, y: startPoint.y + height },
+                    text: pendingTextConfig.text,
+                    color: pendingTextConfig.color,
+                    fontSize: pendingTextConfig.fontSize,
+                    fontFamily: pendingTextConfig.fontFamily,
+                    backgroundColor: 'transparent'
+                };
+                newObjects.push(newObject);
+                changesMade = true;
+                setSelectedObjectId(newObject.id);
+                setActiveTool('move');
+                setPendingTextConfig(null);
+            } else if (activeTool === 'image-placeholder') {
+                const newObject: EditorObject = { id: `obj_${Date.now()}`, type: 'image-placeholder', sp: startPoint, ep: endPoint, color: '#FF69B4', strokeWidth: 2 };
+                newObjects.push(newObject); changesMade = true;
+                setTargetObjectId(newObject.id);
+                setSelectedObjectId(newObject.id);
+                setActiveTool('move');
+                setTimeout(() => {
+                    const input = objectImageInputRef.current;
+                    if (input) {
+                        input.value = '';
+                        const handleFocus = () => {
+                            setTimeout(() => {
+                                setTargetObjectId(currentId => {
+                                    if (currentId === newObject.id) {
+                                        // Restore state to before placeholder was added (effectively removing it)
+                                        updateState(state);
+                                        setSelectedObjectId(null);
+                                        return null;
+                                    }
+                                    return currentId;
+                                });
+                            }, 500);
+                            window.removeEventListener('focus', handleFocus);
+                        };
+                        window.addEventListener('focus', handleFocus);
+                        input.click();
+                    }
+                }, 0);
+            } else if (isDrag) {
+                const newObject: EditorObject = { id: `obj_${Date.now()}`, type: activeTool as DrawingTool, sp: startPoint, ep: endPoint, color: drawingColor, strokeWidth: strokeWidth, };
                 newObjects.push(newObject); changesMade = true;
             }
         } else if ((type === 'moving' || type === 'resizing') && previewObject) { newObjects = newObjects.map(obj => obj.id === previewObject.id ? previewObject : obj); changesMade = true; }
@@ -1818,21 +2185,90 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         else { handleCanvasMouseUp(e as unknown as React.MouseEvent<HTMLCanvasElement>); }
     };
 
-    const handleTextBlur = () => {
-        const canvas = canvasRef.current; const ctx = canvas?.getContext('2d');
-        if (textInput.value && viewedPageId && ctx) {
-            const text = textInput.value; const lines = text.split('\n'); const size = fontSize; const family = fontFamily;
-            ctx.font = `${size}px ${family}`; let maxWidth = 0;
-            lines.forEach(line => { const metrics = ctx.measureText(line); if (metrics.width > maxWidth) { maxWidth = metrics.width; } });
-            const lineHeight = size * 1.2; const totalHeight = lines.length * lineHeight;
-            const newObject: EditorObject = { id: `obj_${Date.now()}`, type: 'text', sp: { x: textInput.x, y: textInput.y }, ep: { x: textInput.x + maxWidth, y: textInput.y + totalHeight }, text: text, color: drawingColor, backgroundColor: textBackgroundColor, fontFamily: family, fontSize: size, };
-            const newState = { ...state, pages: state.pages.map(p => p.id === viewedPageId ? { ...p, objects: [...(p.objects || []), newObject] } : p) };
-            updateState(newState);
-        }
-        setTextInput({ show: false, x: 0, y: 0, value: '' }); setActiveTool('move');
+    // Manual event listener attachment to fix passive event listener issues
+    const canvasHandlersRef = useRef({
+        handleCanvasTouchStart: (e: any) => { },
+        handleCanvasTouchMove: (e: any) => { },
+        handleCanvasTouchEnd: (e: any) => { }
+    });
+
+    useEffect(() => {
+        canvasHandlersRef.current = {
+            handleCanvasTouchStart: (e: any) => handleCanvasTouchStart(e as any),
+            handleCanvasTouchMove: (e: any) => handleCanvasTouchMove(e as any),
+            handleCanvasTouchEnd: (e: any) => handleCanvasTouchEnd(e as any)
+        };
+    });
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const onTouchStart = (e: TouchEvent) => canvasHandlersRef.current.handleCanvasTouchStart(e);
+        const onTouchMove = (e: TouchEvent) => canvasHandlersRef.current.handleCanvasTouchMove(e);
+        const onTouchEnd = (e: TouchEvent) => canvasHandlersRef.current.handleCanvasTouchEnd(e);
+
+        canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+        canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+
+        return () => {
+            canvas.removeEventListener('touchstart', onTouchStart);
+            canvas.removeEventListener('touchmove', onTouchMove);
+            canvas.removeEventListener('touchend', onTouchEnd);
+        };
+    }, []);
+
+
+
+    const handleTextConfirm = (text: string, color: string, fontSize: number, fontFamily: string) => {
+        setPendingTextConfig({ text, color, fontSize, fontFamily });
+        setDrawingColor(color);
+        setFontSize(fontSize);
+        setFontFamily(fontFamily);
+        setShowTextModal(false);
+        setActiveTool('text');
     };
 
-    const drawObject = (ctx: CanvasRenderingContext2D, obj: EditorObject, options: { scaleX?: number, scaleY?: number } = {}) => {
+    // Helper to wrap text
+    const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
+        const words = text.split(''); // Split by char for CJK support? Or words for English?
+        // For mixed content, character splitting is safer for wrapping, but English words shouldn't be split mid-word ideally.
+        // Simple approach: split by words if space exists, else chars.
+        // Given "Chinese" requirement, char splitting is better.
+        // But let's try a hybrid approach or just char splitting for now as it's robust for CJK.
+        // Actually, standard canvas text wrapping usually splits by words.
+        // Let's stick to a simple char-based loop for now to ensure strict width compliance.
+
+        let lines: string[] = [];
+        let currentLine = '';
+
+        // Preserve existing newlines
+        const paragraphs = text.split('\n');
+
+        paragraphs.forEach(paragraph => {
+            const chars = paragraph.split('');
+            let line = '';
+
+            for (let n = 0; n < chars.length; n++) {
+                const testLine = line + chars[n];
+                const metrics = ctx.measureText(testLine);
+                const testWidth = metrics.width;
+
+                if (testWidth > maxWidth && n > 0) {
+                    lines.push(line);
+                    line = chars[n];
+                } else {
+                    line = testLine;
+                }
+            }
+            lines.push(line);
+        });
+
+        return lines;
+    };
+
+    function drawObject(ctx: CanvasRenderingContext2D, obj: EditorObject, options: { scaleX?: number, scaleY?: number } = {}) {
         const { scaleX = 1, scaleY = 1 } = options;
         const sp = { x: obj.sp.x * scaleX, y: obj.sp.y * scaleY };
         const ep = { x: obj.ep.x * scaleX, y: obj.ep.y * scaleY };
@@ -1840,6 +2276,23 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         ctx.strokeStyle = isImagePlaceholder ? '#FF69B4' : (obj.color || 'red');
         ctx.fillStyle = isImagePlaceholder ? '#FF69B4' : (obj.color || 'red');
         ctx.lineWidth = (obj.strokeWidth || 2) * scaleX;
+
+        // Handle rotation for vector objects
+        ctx.save();
+        if (viewedPage && viewedPage.rotation !== 0) {
+            const rotation = viewedPage.rotation;
+            const cx = ctx.canvas.width / 2;
+            const cy = ctx.canvas.height / 2;
+            ctx.translate(cx, cy);
+            ctx.rotate((rotation * Math.PI) / 180);
+
+            // We need to translate back by the UNROTATED center
+            // If rotation is 90 or 270, dimensions are swapped
+            const isSwapped = rotation % 180 !== 0;
+            const unrotatedWidth = isSwapped ? ctx.canvas.height : ctx.canvas.width;
+            const unrotatedHeight = isSwapped ? ctx.canvas.width : ctx.canvas.height;
+            ctx.translate(-unrotatedWidth / 2, -unrotatedHeight / 2);
+        }
 
         switch (obj.type) {
             case 'line': ctx.beginPath(); ctx.moveTo(sp.x, sp.y); ctx.lineTo(ep.x, ep.y); ctx.stroke(); break;
@@ -1868,9 +2321,28 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 if (obj.text) {
                     const size = (obj.fontSize || 16) * scaleY; const family = obj.fontFamily || 'sans-serif';
                     ctx.font = `${size}px ${family}`; ctx.textBaseline = 'top';
-                    const lines = obj.text.split('\n'); const lineHeight = (obj.fontSize || 16) * 1.2 * scaleY;
-                    if (obj.backgroundColor && obj.backgroundColor !== 'transparent') { ctx.fillStyle = obj.backgroundColor; lines.forEach((line, index) => { const metrics = ctx.measureText(line); const textWidth = metrics.width; ctx.fillRect(sp.x, sp.y + (index * lineHeight), textWidth, lineHeight); }); }
-                    ctx.fillStyle = obj.color || 'red'; lines.forEach((line, index) => { ctx.fillText(line, sp.x, sp.y + (index * lineHeight)); });
+
+                    // Use wrapText for auto-wrapping
+                    // Width is determined by the object's bounds
+                    const width = Math.abs(ep.x - sp.x);
+                    // If width is too small (e.g. just created), default to no wrapping (infinity) or a safe min
+                    const effectiveWidth = width < 20 ? 10000 : width;
+
+                    const lines = wrapText(ctx, obj.text, effectiveWidth);
+                    const lineHeight = (obj.fontSize || 16) * 1.2 * scaleY;
+
+                    if (obj.backgroundColor && obj.backgroundColor !== 'transparent') {
+                        ctx.fillStyle = obj.backgroundColor;
+                        lines.forEach((line, index) => {
+                            const metrics = ctx.measureText(line);
+                            const textWidth = metrics.width;
+                            ctx.fillRect(sp.x, sp.y + (index * lineHeight), textWidth, lineHeight);
+                        });
+                    }
+                    ctx.fillStyle = obj.color || 'red';
+                    lines.forEach((line, index) => {
+                        ctx.fillText(line, sp.x, sp.y + (index * lineHeight));
+                    });
                 } break;
             case 'stamp':
                 if (obj.text) {
@@ -1910,7 +2382,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     };
 
     useEffect(() => {
-        const canvas = canvasRef.current; const image = imageRef.current; const ctx = canvas?.getContext('2d');
+        const canvas = canvasRef.current; const image = backgroundRef.current; const ctx = canvas?.getContext('2d');
         if (!ctx || !canvas || !image || !viewedPage) return;
         const { clientWidth, clientHeight } = image;
         if (canvas.width !== clientWidth || canvas.height !== clientHeight) { canvas.width = clientWidth; canvas.height = clientHeight; }
@@ -2000,6 +2472,13 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 <span className="text-sm text-indigo-200">預估壓縮後大小</span>
                                 <span className="font-mono font-bold text-indigo-300">~{formatBytes(getEstimatedSize())}</span>
                             </div>
+
+                            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
+                                <p className="text-yellow-200 text-xs flex items-start gap-2">
+                                    <span className="mt-0.5">⚠️</span>
+                                    注意：壓縮後 PDF 將轉換為圖片格式，文字將無法選取或搜尋。
+                                </p>
+                            </div>
                         </div>
                         <div className="p-4 bg-slate-800/50 border-t border-slate-700 flex justify-end gap-3">
                             <button onClick={() => setShowCompressModal(false)} className="px-5 py-2.5 rounded-xl text-slate-300 hover:bg-slate-700 transition-colors text-sm font-medium">取消</button>
@@ -2014,22 +2493,13 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 {/* Top Row */}
                 <div className="relative flex items-center h-14 px-3 bg-slate-800">
                     <div className="flex-1 flex items-center gap-2 overflow-hidden">
-                        {/* Removed PDF Icon here as requested */}
-                        <div className="flex items-center gap-3 shrink-0 ml-1">
-                            <h2 className="text-sm font-medium tabular-nums text-slate-200">
-                                {selectionMode === 'view'
-                                    ? `頁面 (${viewedPageIndex > -1 ? viewedPageIndex + 1 : 0}/${state.pages.length})`
-                                    : `已選取 ${selectedPages.size}`
-                                }
-                            </h2>
-                            <button
-                                onClick={() => setSelectionMode(m => m === 'view' ? 'select' : 'view')}
-                                className={`p-2 rounded hover:bg-slate-700 transition-colors ${selectionMode === 'select' ? 'text-blue-400 bg-slate-700/50' : 'text-slate-400'}`}
-                                title={selectionMode === 'view' ? '切換至多選模式' : '切換至檢視模式'}
-                            >
-                                {selectionMode === 'view' ? <CheckSquareIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
-                            </button>
-                        </div>
+                        <button
+                            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                            className="p-2 rounded hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                            title={isSidebarOpen ? "收合側邊欄" : "展開側邊欄"}
+                        >
+                            <SidebarIcon className="w-6 h-6" />
+                        </button>
                     </div>
 
                     {/* Center Menu */}
@@ -2164,7 +2634,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 )}
                             </div>
 
-                            <button onClick={() => setActiveTool('text')} title="文字" className={`p-2 rounded-full transition-all ${activeTool === 'text' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <TextIcon className="w-5 h-5" /> </button>
+                            <button onClick={() => setShowTextModal(true)} title="文字" className={`p-2 rounded-full transition-all ${activeTool === 'text' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <TextIcon className="w-5 h-5" /> </button>
                             <button onClick={() => setActiveTool('image-placeholder')} title="疊加圖片" className={`p-2 rounded-full transition-all ${activeTool === 'image-placeholder' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <ImageIcon className="w-5 h-5" /> </button>
 
                             <button
@@ -2190,48 +2660,20 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                         ))}
                                     </div>
                                 )}
-                                {activeTool === 'text' && (
-                                    <div className="flex md:flex-row flex-col items-center gap-2 md:gap-3">
-                                        <div className="flex items-center gap-1 bg-slate-700 rounded px-1">
-                                            <input type="number" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value, 10))} className="bg-transparent border-none w-8 md:w-10 text-sm text-center text-white focus:ring-0 p-1" />
-                                            <span className="text-xs text-slate-400 hidden md:inline pr-1">px</span>
-                                        </div>
-                                        <select
-                                            value={fontFamily}
-                                            onChange={(e) => setFontFamily(e.target.value)}
-                                            className="bg-slate-700 text-white border-none rounded text-xs md:text-sm h-8 px-2 max-w-[80px] md:max-w-[120px] focus:ring-0"
-                                        >
-                                            <option value="sans-serif">Sans Serif</option>
-                                            <option value="serif">Serif</option>
-                                            <option value="monospace">Mono</option>
-                                        </select>
-                                        <div className="flex items-center gap-2 border-l border-slate-600 pl-2 md:pl-3">
-                                            <label className="flex items-center gap-1 text-xs text-slate-300 cursor-pointer select-none">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={textBackgroundColor !== 'transparent'}
-                                                    onChange={(e) => setTextBackgroundColor(e.target.checked ? '#ffffff' : 'transparent')}
-                                                    className="rounded bg-slate-700 border-slate-600 text-blue-600 focus:ring-0 w-3 h-3 md:w-4 md:h-4"
-                                                />
-                                                <span className="hidden md:inline">背景</span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         )}
-                    </div >
-                </div >
+                    </div>
+                </div>
             </header >
 
             <div className="flex flex-1 overflow-hidden relative">
                 {/* Desktop Sidebar */}
                 <div
                     ref={sidebarRef}
-                    className="hidden md:flex flex-col w-52 bg-slate-800 border-r border-slate-700 overflow-y-auto custom-scrollbar flex-shrink-0"
+                    className={`hidden md:flex flex-col bg-slate-800 border-r border-slate-700 overflow-y-auto custom-scrollbar flex-shrink-0 transition-all duration-300 ${isSidebarOpen ? 'w-52 opacity-100' : 'w-0 opacity-0 border-r-0'}`}
                 >
                     <div className="p-4 space-y-4">
-                        {state.pages.map((page, index) => (
+                        {state?.pages?.map((page, index) => (
                             <div key={page.id}
                                 draggable
                                 onDragStart={() => setDraggedId(page.id)}
@@ -2244,21 +2686,41 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 }}
                                 onClick={() => handleThumbnailClick(page.id)}
                                 className={`
-                                    relative w-full aspect-[3/4] group cursor-pointer rounded-lg overflow-hidden border-2 transition-all bg-slate-900/50
+                                    relative w-full group cursor-pointer rounded-lg overflow-hidden border-2 transition-all bg-slate-900/50
+                                    ${page.rotation % 180 !== 0 ? 'aspect-[4/3]' : 'aspect-[3/4]'}
                                     ${selectedPages.has(page.id) ? 'border-blue-500 ring-2 ring-blue-500/50' : 'border-transparent hover:border-slate-500'}
                                     ${viewedPageId === page.id && !selectedPages.has(page.id) ? 'border-slate-500' : ''}
                                     ${draggedId === page.id ? 'opacity-40 scale-95' : ''}
                                 `}
                             >
-                                <img
-                                    src={pageUrlCache.get(page.id)}
-                                    className="w-full h-full object-contain p-1"
-                                    style={{ transform: `rotate(${page.rotation}deg)` }}
-                                    alt={`Page ${index + 1}`}
-                                />
+                                {page.source.type === 'pdf' ? (
+                                    <div className="w-full h-full p-1 flex items-center justify-center overflow-hidden bg-white">
+                                        <div className="pointer-events-none origin-center w-full h-full flex items-center justify-center">
+                                            <PDFPageView
+                                                pdfBlob={state.pdfAssets?.[page.source.pdfId]}
+                                                pageIndex={page.source.pageIndex}
+                                                scale={0.3} // Small scale for thumbnail
+                                                rotation={page.rotation}
+                                                className="max-w-full max-h-full"
+                                            />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <img
+                                        src={pageUrlCache.get(page.id)}
+                                        className="w-full h-full object-contain p-1"
+                                        style={{ transform: `rotate(${page.rotation}deg)` }}
+                                        alt={`Page ${index + 1}`}
+                                    />
+                                )}
                                 <div className="absolute bottom-1 right-1 bg-slate-900/80 text-white text-[10px] font-mono px-2 py-0.5 rounded-md shadow-sm">
                                     {index + 1}
                                 </div>
+                                {selectedPages.has(page.id) && (
+                                    <div className="absolute bottom-1 left-1 bg-blue-500 text-white rounded-full p-0.5 shadow-sm">
+                                        <CheckSquareIcon className="w-3 h-3" />
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -2269,7 +2731,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     {/* ... (Thumbnail container code remains same) */}
                     <div
                         ref={thumbnailContainerRef}
-                        className="md:hidden bg-slate-800 border-b border-slate-700 h-24 flex items-center px-4 gap-3 overflow-x-auto no-scrollbar flex-shrink-0 relative z-30 shadow-md"
+                        className={`md:hidden bg-slate-800 border-b border-slate-700 flex items-center px-4 gap-3 overflow-x-auto no-scrollbar flex-shrink-0 relative z-30 shadow-md transition-all duration-300 ${isSidebarOpen ? 'h-24 opacity-100' : 'h-0 opacity-0 border-b-0 py-0'}`}
                         onWheel={handleThumbnailWheel}
                     >
                         {state.pages.map((page, index) => (
@@ -2291,34 +2753,54 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 `}
                                 onClick={() => handleThumbnailClick(page.id)}
                             >
-                                <img
-                                    src={pageUrlCache.get(page.id)}
-                                    className="h-full w-auto object-contain bg-slate-900"
-                                    style={{ transform: `rotate(${page.rotation}deg)` }}
-                                    alt={`Page ${index + 1}`}
-                                />
+                                {page.source.type === 'pdf' ? (
+                                    <div className="h-full w-auto p-0.5 flex items-center justify-center overflow-hidden bg-white">
+                                        <div className="pointer-events-none origin-center w-full h-full flex items-center justify-center">
+                                            <PDFPageView
+                                                pdfBlob={state.pdfAssets?.[page.source.pdfId]}
+                                                pageIndex={page.source.pageIndex}
+                                                scale={0.2} // Smaller scale for mobile thumbnail
+                                                rotation={page.rotation}
+                                                className="max-w-full max-h-full"
+                                            />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <img
+                                        src={pageUrlCache.get(page.id)}
+                                        className="h-full w-auto object-contain bg-slate-900"
+                                        style={{ transform: `rotate(${page.rotation}deg)` }}
+                                        alt={`Page ${index + 1}`}
+                                    />
+                                )}
                                 <div className="absolute bottom-0 right-0 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-tl">
                                     {index + 1}
                                 </div>
+                                {selectedPages.has(page.id) && (
+                                    <div className="absolute bottom-0 left-0 bg-blue-500 text-white rounded-tr p-0.5 shadow-sm">
+                                        <CheckSquareIcon className="w-3 h-3" />
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
 
-                    <main className="flex-1 p-4 flex flex-col relative overflow-hidden" onWheel={handleMainViewWheel} style={{ backgroundImage: 'radial-gradient(circle at center, #1e293b 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
+                    <main id="main-editor-view" className="flex-1 p-4 flex flex-col relative overflow-hidden" style={{ backgroundImage: 'radial-gradient(circle at center, #1e293b 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
                         <div className="flex-grow overflow-hidden flex items-center justify-center">
                             {viewedPage ? (
-                                <div className="relative touch-none select-none shadow-2xl" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transition: 'transform 0.2s ease-in-out', transformOrigin: 'center center' }}>
+                                <div className={`relative touch-none shadow-2xl ${activeTool === 'select-text' ? 'select-text' : 'select-none'}`} style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transition: 'transform 0.2s ease-in-out', transformOrigin: 'center center' }}>
                                     {viewedPage.source.type === 'pdf' ? (
                                         <div
                                             ref={backgroundRef as React.RefObject<HTMLDivElement>}
-                                            className="pointer-events-none origin-center"
-                                            style={{ transform: `rotate(${viewedPage.rotation}deg)`, display: 'inline-block' }}
+                                            className={`${activeTool === 'select-text' ? 'pointer-events-auto' : 'pointer-events-none'} origin-center`}
+                                            style={{ display: 'inline-block' }}
                                         >
                                             <PDFPageView
                                                 pdfBlob={state.pdfAssets?.[viewedPage.source.pdfId]}
                                                 pageIndex={viewedPage.source.pageIndex}
                                                 scale={1.5}
-                                                rotation={0}
+                                                rotation={viewedPage.rotation}
+                                                className="shadow-lg"
                                                 onLoadSuccess={() => setImageLoadedCount(c => c + 1)}
                                             />
                                         </div>
@@ -2334,64 +2816,67 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                     <canvas
                                         ref={canvasRef}
                                         className={`absolute top-0 left-0 z-10 ${activeTool === 'select-text' ? 'pointer-events-none' : 'pointer-events-auto'}`}
-                                        style={{ transform: `rotate(${viewedPage.rotation}deg)` }}
                                         onMouseDown={handleCanvasMouseDown}
                                         onMouseMove={handleCanvasMouseMove}
                                         onMouseUp={handleCanvasMouseUp}
                                         onMouseLeave={handleCanvasMouseUp}
-                                        onTouchStart={handleCanvasTouchStart}
-                                        onTouchMove={handleCanvasTouchMove}
-                                        onTouchEnd={handleCanvasTouchEnd}
                                     />
-                                    {textInput.show && (
-                                        <textarea
-                                            ref={textInputRef}
-                                            value={textInput.value}
-                                            onChange={(e) => setTextInput(t => ({ ...t, value: e.target.value }))}
-                                            onBlur={handleTextBlur}
-                                            className="absolute border p-1 z-20 overflow-auto resize whitespace-pre shadow-sm rounded-sm"
-                                            style={{
-                                                left: textInput.x * zoom,
-                                                top: textInput.y * zoom,
-                                                fontSize: fontSize * zoom,
-                                                fontFamily: fontFamily,
-                                                color: drawingColor,
-                                                borderColor: drawingColor,
-                                                backgroundColor: textBackgroundColor,
-                                                transform: `rotate(${viewedPage.rotation}deg)`,
-                                                transformOrigin: 'top left',
-                                                minWidth: `${100 * zoom}px`,
-                                                minHeight: `${(fontSize * 1.5) * zoom}px`
-                                            }}
-                                        />
-                                    )}
+
                                 </div>
                             ) : <p className="text-slate-500">沒有頁面可顯示</p>
                             }
                         </div>
 
+                        {/* Page Indicator - Bottom Center */}
+                        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 bg-slate-800/30 backdrop-blur-md rounded-full px-4 py-2 text-white shadow-xl border border-slate-600/50 flex items-center gap-3">
+                            <span className="text-sm font-medium tabular-nums">
+                                {selectionMode === 'view'
+                                    ? `頁面 (${viewedPageIndex > -1 ? viewedPageIndex + 1 : 0}/${state.pages.length})`
+                                    : `已選取 ${selectedPages.size}`
+                                }
+                            </span>
+                            <button
+                                onClick={() => setSelectionMode(m => m === 'view' ? 'select' : 'view')}
+                                className={`p-1.5 rounded-full hover:bg-slate-700 transition-colors ${selectionMode === 'select' ? 'text-blue-400 bg-slate-700/50' : 'text-white'}`}
+                                title={selectionMode === 'view' ? '切換至多選模式' : '切換至檢視模式'}
+                            >
+                                {selectionMode === 'view' ? <CheckSquareIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+                            </button>
+                        </div>
+
                         {viewedPage && (
-                            <div className="hidden md:flex flex-col-reverse absolute bottom-6 right-6 z-30 gap-2">
-                                <div className="bg-slate-800/80 backdrop-blur-md rounded-full items-center text-white shadow-xl border border-slate-600 flex p-1">
-                                    <button onClick={handleZoomOut} className="p-2.5 hover:bg-slate-700 rounded-full transition-colors" title="縮小">
-                                        <MinusIcon className="w-5 h-5" />
-                                    </button>
-                                    <span className="px-2 text-sm font-mono font-semibold w-14 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
-                                    <button onClick={handleResetZoom} className="p-2.5 hover:bg-slate-700 rounded-full transition-colors" title="恢復 100%">
-                                        <ResetZoomIcon className="w-5 h-5" />
-                                    </button>
-                                    <button onClick={handleZoomIn} className="p-2.5 hover:bg-slate-700 rounded-full transition-colors" title="放大">
+                            <div className="hidden md:flex flex-col absolute bottom-6 right-6 z-30 gap-2">
+                                <div className="bg-slate-800/30 backdrop-blur-md rounded-full items-center text-white shadow-xl border border-slate-600/50 flex flex-col p-1.5 gap-1">
+                                    <button onClick={handleZoomIn} className="p-2 hover:bg-slate-700 rounded-full transition-colors" title="放大">
                                         <PlusIcon className="w-5 h-5" />
+                                    </button>
+                                    <div className="w-full h-px bg-slate-700/50"></div>
+                                    <button onClick={handleResetZoom} className="p-2 hover:bg-slate-700 rounded-full transition-colors group" title="恢復 100%">
+                                        <span className="text-[10px] font-mono font-bold group-hover:hidden">{Math.round(zoom * 100)}</span>
+                                        <ResetZoomIcon className="w-5 h-5 hidden group-hover:block" />
+                                    </button>
+                                    <div className="w-full h-px bg-slate-700/50"></div>
+                                    <button onClick={handleZoomOut} className="p-2 hover:bg-slate-700 rounded-full transition-colors" title="縮小">
+                                        <MinusIcon className="w-5 h-5" />
                                     </button>
                                 </div>
                             </div>
                         )}
                     </main>
                 </div>
-            </div>
+            </div >
             <input type="file" ref={fileInputRef} multiple accept="application/pdf,image/*" className="hidden" onChange={onAddFilesChange} />
             <input type="file" ref={objectImageInputRef} accept="image/*" className="hidden" onChange={onObjectImageChange} />
-        </div >
+            <TextEditorModal
+                isOpen={showTextModal}
+                onClose={() => setShowTextModal(false)}
+                onConfirm={handleTextConfirm}
+                initialText={pendingTextConfig?.text || ''}
+                initialColor={drawingColor}
+                initialFontSize={fontSize}
+                initialFontFamily={fontFamily}
+            />
+        </div>
     );
 };
 
@@ -2618,6 +3103,8 @@ const App: React.FC = () => {
             {view === 'merge-sort' && (
                 <MergeSortPage sortedFiles={sortedMergeFiles} onSave={handleMergeSave} onCancel={() => setView('home')} />
             )}
+
+
         </>
     );
 };

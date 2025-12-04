@@ -13,13 +13,26 @@ interface PDFPageViewProps {
 const PDFPageView: React.FC<PDFPageViewProps> = ({ pdfBlob, pageIndex, scale, rotation, className, onLoadSuccess }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const textLayerRef = useRef<HTMLDivElement>(null);
+    const renderTaskRef = useRef<any>(null); // Store render task for cancellation
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         let isMounted = true;
+
         const renderPage = async () => {
             if (!canvasRef.current || !pdfBlob) return;
+
+            // Cancel any existing render task
+            if (renderTaskRef.current) {
+                try {
+                    await renderTaskRef.current.cancel();
+                } catch (ignore) {
+                    // Cancellation might throw, which is expected
+                }
+                renderTaskRef.current = null;
+            }
+
             setLoading(true);
             setError(null);
 
@@ -28,11 +41,14 @@ const PDFPageView: React.FC<PDFPageViewProps> = ({ pdfBlob, pageIndex, scale, ro
                 const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                 const page = await pdf.getPage(pageIndex);
 
+                if (!isMounted) return;
+
                 // Handle High DPI
                 const pixelRatio = window.devicePixelRatio || 1;
                 const viewport = page.getViewport({ scale: scale, rotation: rotation });
 
                 const canvas = canvasRef.current;
+                if (!canvas) return;
                 const context = canvas.getContext('2d');
 
                 if (context) {
@@ -47,35 +63,68 @@ const PDFPageView: React.FC<PDFPageViewProps> = ({ pdfBlob, pageIndex, scale, ro
                         canvasContext: context,
                         viewport: viewport,
                     };
-                    await page.render(renderContext).promise;
+
+                    // Store the render task
+                    const renderTask = page.render(renderContext);
+                    renderTaskRef.current = renderTask;
+
+                    await renderTask.promise;
+                    renderTaskRef.current = null; // Clear task after completion
+
+                    if (!isMounted) return;
 
                     // Render Text Layer
                     if (textLayerRef.current) {
                         const textContent = await page.getTextContent();
-                        textLayerRef.current.innerHTML = '';
-                        textLayerRef.current.style.width = `${viewport.width}px`;
-                        textLayerRef.current.style.height = `${viewport.height}px`;
+                        if (!isMounted) return;
 
-                        // Assign the custom style property for --scale-factor if needed by newer pdf.js, 
-                        // but usually viewport handles it.
-                        textLayerRef.current.style.setProperty('--scale-factor', `${scale}`);
+                        if (textContent.items.length === 0) {
+                            console.log("No text content found for page", pageIndex);
+                        } else {
+                            textLayerRef.current.innerHTML = '';
+                            textLayerRef.current.style.width = `${viewport.width}px`;
+                            textLayerRef.current.style.height = `${viewport.height}px`;
+                            textLayerRef.current.style.setProperty('--scale-factor', `${scale}`);
 
-                        // Use any cast because renderTextLayer might not be in the types depending on version
-                        await (pdfjsLib as any).renderTextLayer({
-                            textContentSource: textContent,
-                            container: textLayerRef.current,
-                            viewport: viewport,
-                            textDivs: []
-                        }).promise;
+                            try {
+                                // Use new TextLayer API for pdfjs-dist v4+
+                                const TextLayer = (pdfjsLib as any).TextLayer;
+                                if (TextLayer) {
+                                    const textLayer = new TextLayer({
+                                        textContentSource: textContent,
+                                        container: textLayerRef.current,
+                                        viewport: viewport,
+                                    });
+                                    await textLayer.render();
+                                    console.log("Text layer rendered using TextLayer API for page", pageIndex);
+                                } else {
+                                    // Fallback for older versions or if TextLayer is not found on main export
+                                    await (pdfjsLib as any).renderTextLayer({
+                                        textContentSource: textContent,
+                                        container: textLayerRef.current,
+                                        viewport: viewport,
+                                        textDivs: []
+                                    }).promise;
+                                    console.log("Text layer rendered using renderTextLayer (fallback) for page", pageIndex);
+                                }
+                            } catch (textLayerErr) {
+                                console.warn("Text layer rendering warning:", textLayerErr);
+                            }
+                        }
                     }
 
                     if (isMounted && onLoadSuccess) {
                         onLoadSuccess(viewport.width, viewport.height);
                     }
                 }
-            } catch (err) {
-                console.error("Error rendering PDF page:", err);
-                if (isMounted) setError("無法載入頁面");
+            } catch (err: any) {
+                if (err?.name === 'RenderingCancelledException') {
+                    // Expected error when cancelled, do nothing
+                    console.log('Rendering cancelled');
+                } else {
+                    console.error("Error rendering PDF page:", err);
+                    if (isMounted) setError("無法載入頁面");
+                }
             } finally {
                 if (isMounted) setLoading(false);
             }
@@ -85,6 +134,10 @@ const PDFPageView: React.FC<PDFPageViewProps> = ({ pdfBlob, pageIndex, scale, ro
 
         return () => {
             isMounted = false;
+            if (renderTaskRef.current) {
+                renderTaskRef.current.cancel();
+                renderTaskRef.current = null;
+            }
         };
     }, [pdfBlob, pageIndex, scale, rotation]);
 
@@ -98,9 +151,9 @@ const PDFPageView: React.FC<PDFPageViewProps> = ({ pdfBlob, pageIndex, scale, ro
                     right: 0;
                     bottom: 0;
                     overflow: hidden;
-                    opacity: 0.2;
                     line-height: 1.0;
                     pointer-events: none; /* Allow clicks to pass through to canvas/editor */
+                    z-index: 50;
                 }
                 .textLayer > span {
                     color: transparent;
