@@ -1616,6 +1616,22 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         event.target.value = '';
     };
 
+    const convertImageToPdf = async (imageFile: File): Promise<Blob> => {
+        const pdfDoc = await PDFDocument.create();
+        const imageBytes = await imageFile.arrayBuffer();
+        let image;
+        if (imageFile.type === 'image/png') {
+            image = await pdfDoc.embedPng(imageBytes);
+        } else {
+            image = await pdfDoc.embedJpg(imageBytes); // Fallback to JPG embedding for others (or try/catch)
+        }
+        const { width, height } = image;
+        const page = pdfDoc.addPage([width, height]);
+        page.drawImage(image, { x: 0, y: 0, width, height });
+        const pdfBytes = await pdfDoc.save();
+        return new Blob([pdfBytes], { type: 'application/pdf' });
+    };
+
     const onAddFilesChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
         if (!files || files.length === 0) return;
@@ -1642,12 +1658,23 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                         });
                     }
                 } else if (file.type.startsWith('image/')) {
-                    newPages.push({
-                        id: `page_added_${Date.now()}_${i}`,
-                        source: { type: 'image', data: file },
-                        rotation: 0,
-                        objects: []
-                    });
+                    // Convert image to PDF immediately
+                    try {
+                        const pdfBlob = await convertImageToPdf(file);
+                        const pdfId = `pdf_from_img_${Date.now()}_${i}`;
+                        newPdfAssets[pdfId] = pdfBlob;
+
+                        // Since it's a single page PDF now
+                        newPages.push({
+                            id: `page_added_${Date.now()}_${i}`,
+                            source: { type: 'pdf', pdfId, pageIndex: 1 },
+                            rotation: 0,
+                            objects: []
+                        });
+                    } catch (err) {
+                        console.error("Failed to convert image to PDF", err);
+                        alert(`無法轉換圖片 ${file.name}`);
+                    }
                 }
             }
             if (newPages.length > 0) {
