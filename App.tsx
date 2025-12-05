@@ -2410,7 +2410,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
         // Handle rotation for vector objects
         ctx.save();
-        if (viewedPage && viewedPage.rotation !== 0) {
+        // For PDF, we rotate the context because the canvas is unrotated relative to the page content's internal rotation
+        // For Image, we rotate the CANVAS ELEMENT itself via CSS, so we DON'T rotate the context (otherwise it double-rotates)
+        // Actually, we need to check the source type.
+        const isImagePage = viewedPage.source.type === 'image';
+
+        if (viewedPage && viewedPage.rotation !== 0 && !isImagePage) {
             const rotation = viewedPage.rotation;
             const cx = ctx.canvas.width / 2;
             const cy = ctx.canvas.height / 2;
@@ -2528,7 +2533,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             ctx.strokeStyle = 'rgba(0, 123, 255, 0.7)'; ctx.lineWidth = 1; ctx.setLineDash([5, 5]); ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
             const handles = getHandlesForObject(currentSelectedObject);
             const isLockedImage = currentSelectedObject.type === 'image-placeholder' && currentSelectedObject.imageData;
-            if (!isLockedImage) { ctx.fillStyle = 'white'; ctx.strokeStyle = 'black'; ctx.lineWidth = 1; Object.values(handles).forEach(pos => { ctx.fillRect(pos.x - 4, pos.y - 4, 8, 8); ctx.strokeRect(pos.x - 4, pos.y - 4, 8, 8); }); }
+            // Always show handles, just style them. For locked images (overlays), show distinct handles.
+            ctx.fillStyle = 'white'; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2; // Blue border
+            Object.values(handles).forEach(pos => {
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 6, 0, 2 * Math.PI); // Circular handle
+                ctx.fill();
+                ctx.stroke();
+            });
         }
     }, [viewedPage, selectedObjectId, selectedObject, previewObject, zoom, pan, imageLoadedCount]);
 
@@ -2949,6 +2961,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                     <canvas
                                         ref={canvasRef}
                                         className={`absolute top-0 left-0 z-10 ${activeTool === 'select-text' ? 'pointer-events-none' : 'pointer-events-auto'}`}
+                                        style={viewedPage.source.type === 'image' ? { transform: `rotate(${viewedPage.rotation}deg)` } : {}}
                                         onMouseDown={handleCanvasMouseDown}
                                         onMouseMove={handleCanvasMouseMove}
                                         onMouseUp={handleCanvasMouseUp}
