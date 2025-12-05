@@ -1966,6 +1966,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         startHeight?: number;
     }>({ mode: 'idle', startDist: 0, startZoom: 1, startY: 0, lastY: 0 });
 
+    const zoomRef = useRef(zoom);
+    useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
     useEffect(() => {
         const handleMainViewWheel = (e: WheelEvent) => {
             e.preventDefault();
@@ -1989,16 +1992,38 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const handleMainTouchStart = (e: TouchEvent) => {
             if (e.touches.length === 2) {
                 e.preventDefault();
+
+                // Check for object pinch (if object is selected)
+                if (selectedObject && (selectedObject.type === 'image' || selectedObject.type === 'image-placeholder' || selectedObject.type === 'rect' || selectedObject.type === 'circle')) {
+                    const t1 = e.touches[0];
+                    const t2 = e.touches[1];
+                    const distX = Math.abs(t1.clientX - t2.clientX);
+                    const distY = Math.abs(t1.clientY - t2.clientY);
+
+                    touchState.current = {
+                        mode: 'object-pinch',
+                        startDist: 0,
+                        startZoom: 1,
+                        startY: 0,
+                        lastY: 0,
+                        startDistX: distX,
+                        startDistY: distY,
+                        startWidth: selectedObject.width || 100,
+                        startHeight: selectedObject.height || 100
+                    };
+                    setActionState({ type: 'idle' });
+                    return;
+                }
+
                 const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
                 touchState.current = {
                     mode: 'pinch',
                     startDist: dist,
-                    startZoom: zoom, // Use current zoom from state (accessed via closure if possible, but useEffect dependency might be tricky. Better to use ref or rely on state update function if needed, but here we need initial value. Actually, since this is inside useEffect, 'zoom' might be stale if not in dependency. Wait, I am defining these INSIDE useEffect now? No, I should define them outside or use refs for zoom.)
+                    startZoom: zoomRef.current,
                     startY: 0,
                     lastY: 0
                 };
             } else if (e.touches.length === 1 && !isDrawingToolActive) {
-                // Only enable swipe if not drawing/moving objects
                 touchState.current = {
                     mode: 'swipe',
                     startDist: 0,
@@ -2009,22 +2034,49 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             }
         };
 
-        // Wait, I need access to 'zoom' state inside the event listener. 
-        // If I define these inside useEffect, I need to add 'zoom' to dependency array, which causes re-binding listeners on every zoom change.
-        // Better to use a ref for current zoom to avoid re-binding.
-        const zoomRef = useRef(zoom);
-        useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
 
         const handleMainTouchMove = (e: TouchEvent) => {
+            if (touchState.current.mode === 'object-pinch' && e.touches.length === 2 && selectedObject) {
+                e.preventDefault();
+                const t1 = e.touches[0];
+                const t2 = e.touches[1];
+                const distX = Math.abs(t1.clientX - t2.clientX);
+                const distY = Math.abs(t1.clientY - t2.clientY);
+
+                const scaleX = distX / (touchState.current.startDistX || 1);
+                const scaleY = distY / (touchState.current.startDistY || 1);
+
+                const newWidth = (touchState.current.startWidth || 100) * scaleX;
+                const newHeight = (touchState.current.startHeight || 100) * scaleY;
+
+                const newPages = [...state.pages];
+                const pageIndex = newPages.findIndex(p => p.id === viewedPageId);
+                if (pageIndex === -1) return;
+
+                const page = { ...newPages[pageIndex] };
+                newPages[pageIndex] = page;
+
+                const objIndex = page.objects.findIndex(o => o.id === selectedObject.id);
+                if (objIndex === -1) return;
+
+                const updatedObj = { ...page.objects[objIndex], width: newWidth, height: newHeight };
+                page.objects = [...page.objects];
+                page.objects[objIndex] = updatedObj;
+
+                const newHistory = [...history];
+                newHistory[historyIndex] = { ...newHistory[historyIndex], pages: newPages };
+                setHistory(newHistory);
+                setIsDirty(true);
+                return;
+            }
+
             if (touchState.current.mode === 'pinch' && e.touches.length === 2) {
                 e.preventDefault();
                 const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
                 const scale = (dist / touchState.current.startDist) * touchState.current.startZoom;
                 setZoom(Math.max(0.2, Math.min(scale, 5)));
             } else if (touchState.current.mode === 'swipe' && e.touches.length === 1) {
-                // Optional: Implement continuous scroll or just threshold-based page switch
-                // For page switch, we usually wait for end or use a threshold.
-                // Let's track movement for Swipe-to-Change-Page logic in TouchEnd
                 touchState.current.lastY = e.touches[0].clientY;
             }
         };
