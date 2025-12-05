@@ -1954,6 +1954,18 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const handleThumbnailWheel = (e: React.WheelEvent) => { if (thumbnailContainerRef.current) { thumbnailContainerRef.current.scrollLeft += e.deltaY; } };
 
+    const touchState = useRef<{
+        mode: 'idle' | 'pinch' | 'swipe' | 'object-pinch';
+        startDist: number;
+        startZoom: number;
+        startY: number;
+        lastY: number;
+        startDistX?: number;
+        startDistY?: number;
+        startWidth?: number;
+        startHeight?: number;
+    }>({ mode: 'idle', startDist: 0, startZoom: 1, startY: 0, lastY: 0 });
+
     useEffect(() => {
         const handleMainViewWheel = (e: WheelEvent) => {
             e.preventDefault();
@@ -1981,11 +1993,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 touchState.current = {
                     mode: 'pinch',
                     startDist: dist,
-                    startZoom: zoomRef.current,
+                    startZoom: zoom, // Use current zoom from state (accessed via closure if possible, but useEffect dependency might be tricky. Better to use ref or rely on state update function if needed, but here we need initial value. Actually, since this is inside useEffect, 'zoom' might be stale if not in dependency. Wait, I am defining these INSIDE useEffect now? No, I should define them outside or use refs for zoom.)
                     startY: 0,
                     lastY: 0
                 };
             } else if (e.touches.length === 1 && !isDrawingToolActive) {
+                // Only enable swipe if not drawing/moving objects
                 touchState.current = {
                     mode: 'swipe',
                     startDist: 0,
@@ -1996,6 +2009,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             }
         };
 
+        // Wait, I need access to 'zoom' state inside the event listener. 
+        // If I define these inside useEffect, I need to add 'zoom' to dependency array, which causes re-binding listeners on every zoom change.
+        // Better to use a ref for current zoom to avoid re-binding.
+        const zoomRef = useRef(zoom);
+        useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
         const handleMainTouchMove = (e: TouchEvent) => {
             if (touchState.current.mode === 'pinch' && e.touches.length === 2) {
                 e.preventDefault();
@@ -2003,6 +2022,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 const scale = (dist / touchState.current.startDist) * touchState.current.startZoom;
                 setZoom(Math.max(0.2, Math.min(scale, 5)));
             } else if (touchState.current.mode === 'swipe' && e.touches.length === 1) {
+                // Optional: Implement continuous scroll or just threshold-based page switch
+                // For page switch, we usually wait for end or use a threshold.
+                // Let's track movement for Swipe-to-Change-Page logic in TouchEnd
                 touchState.current.lastY = e.touches[0].clientY;
             }
         };
@@ -2010,10 +2032,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const handleMainTouchEnd = (e: TouchEvent) => {
             if (touchState.current.mode === 'swipe') {
                 const diffY = touchState.current.lastY - touchState.current.startY;
-                const threshold = 50; // Reduced threshold for easier swipe
+                const threshold = 100; // px
                 const now = Date.now();
-                if (Math.abs(diffY) > threshold && now - lastScrollTime.current > 300) {
-                    if (diffY < 0) {
+                if (now - lastScrollTime.current > 300) { // Debounce
+                    if (diffY < -threshold) {
                         // Swiped up -> Next page
                         const idx = state.pages.findIndex(p => p.id === viewedPageId);
                         if (idx < state.pages.length - 1) {
@@ -2022,7 +2044,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                             lastScrollTime.current = now;
                             scrollToThumbnail(nextId);
                         }
-                    } else {
+                    } else if (diffY > threshold) {
                         // Swiped down -> Prev page
                         const idx = state.pages.findIndex(p => p.id === viewedPageId);
                         if (idx > 0) {
@@ -2052,89 +2074,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 mainElement.removeEventListener('touchend', handleMainTouchEnd);
             }
         };
-    }, [isDrawingToolActive, state.pages, viewedPageId]);
-
-    // Touch Gesture Handlers for Main View
-    const touchState = useRef<{
-        mode: 'idle' | 'pinch' | 'swipe';
-        startDist: number;
-        startZoom: number;
-        startY: number;
-        lastY: number;
-    }>({ mode: 'idle', startDist: 0, startZoom: 1, startY: 0, lastY: 0 });
-
-    const handleMainTouchStart = (e: TouchEvent) => {
-        if (e.touches.length === 2) {
-            e.preventDefault();
-            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-            touchState.current = {
-                mode: 'pinch',
-                startDist: dist,
-                startZoom: zoom, // Use current zoom from state (accessed via closure if possible, but useEffect dependency might be tricky. Better to use ref or rely on state update function if needed, but here we need initial value. Actually, since this is inside useEffect, 'zoom' might be stale if not in dependency. Wait, I am defining these INSIDE useEffect now? No, I should define them outside or use refs for zoom.)
-                startY: 0,
-                lastY: 0
-            };
-        } else if (e.touches.length === 1 && !isDrawingToolActive) {
-            // Only enable swipe if not drawing/moving objects
-            touchState.current = {
-                mode: 'swipe',
-                startDist: 0,
-                startZoom: 1,
-                startY: e.touches[0].clientY,
-                lastY: e.touches[0].clientY
-            };
-        }
-    };
-
-    // Wait, I need access to 'zoom' state inside the event listener. 
-    // If I define these inside useEffect, I need to add 'zoom' to dependency array, which causes re-binding listeners on every zoom change.
-    // Better to use a ref for current zoom to avoid re-binding.
-    const zoomRef = useRef(zoom);
-    useEffect(() => { zoomRef.current = zoom; }, [zoom]);
-
-    const handleMainTouchMove = (e: TouchEvent) => {
-        if (touchState.current.mode === 'pinch' && e.touches.length === 2) {
-            e.preventDefault();
-            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-            const scale = (dist / touchState.current.startDist) * touchState.current.startZoom;
-            setZoom(Math.max(0.2, Math.min(scale, 5)));
-        } else if (touchState.current.mode === 'swipe' && e.touches.length === 1) {
-            // Optional: Implement continuous scroll or just threshold-based page switch
-            // For page switch, we usually wait for end or use a threshold.
-            // Let's track movement for Swipe-to-Change-Page logic in TouchEnd
-            touchState.current.lastY = e.touches[0].clientY;
-        }
-    };
-
-    const handleMainTouchEnd = (e: TouchEvent) => {
-        if (touchState.current.mode === 'swipe') {
-            const diffY = touchState.current.lastY - touchState.current.startY;
-            const threshold = 100; // px
-            const now = Date.now();
-            if (now - lastScrollTime.current > 300) { // Debounce
-                if (diffY < -threshold) {
-                    // Swiped up -> Next page
-                    const idx = state.pages.findIndex(p => p.id === viewedPageId);
-                    if (idx < state.pages.length - 1) {
-                        const nextId = state.pages[idx + 1].id;
-                        setViewedPageId(nextId);
-                        lastScrollTime.current = now;
-                        scrollToThumbnail(nextId);
-                    }
-                } else if (diffY > threshold) {
-                    // Swiped down -> Prev page
-                    const idx = state.pages.findIndex(p => p.id === viewedPageId);
-                    if (idx > 0) {
-                        const prevId = state.pages[idx - 1].id;
-                        setViewedPageId(prevId);
-                        lastScrollTime.current = now;
-                        scrollToThumbnail(prevId);
-                    }
-                }
-            }
-        }
-        touchState.current.mode = 'idle';
-    };
+    }, [isDrawingToolActive, state.pages, viewedPageId, selectedObjectId]);
 
 
     // Toolbar Drag Handlers for Mobile
