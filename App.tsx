@@ -2132,8 +2132,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
         // When rotated 90 or 270 degrees, the "width" of the unrotated page corresponds to the "height" of the rotated element
         const isSwapped = rotation % 180 !== 0;
-        const unrotatedWidth = isSwapped ? background.clientHeight : background.clientWidth;
-        const unrotatedHeight = isSwapped ? background.clientWidth : background.clientHeight;
+        let unrotatedWidth, unrotatedHeight;
+
+        if (viewedPage.source.type === 'image') {
+            unrotatedWidth = background.clientWidth;
+            unrotatedHeight = background.clientHeight;
+        } else {
+            unrotatedWidth = isSwapped ? background.clientHeight : background.clientWidth;
+            unrotatedHeight = isSwapped ? background.clientWidth : background.clientHeight;
+        }
 
         const finalX = (unrotatedWidth / 2) + unscaledX; const finalY = (unrotatedHeight / 2) + unscaledY;
         return { x: finalX, y: finalY };
