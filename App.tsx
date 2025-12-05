@@ -2018,17 +2018,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
                 touchState.current = {
                     mode: 'pinch',
-                    startDist: dist,
-                    startZoom: zoomRef.current,
-                    startY: 0,
-                    lastY: 0
-                };
-            } else if (e.touches.length === 1 && !isDrawingToolActive) {
-                touchState.current = {
-                    mode: 'swipe',
-                    startDist: 0,
-                    startZoom: 1,
-                    startY: e.touches[0].clientY,
                     lastY: e.touches[0].clientY
                 };
             }
@@ -2184,6 +2173,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         return null;
     };
 
+    const getClientCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
+        if ('touches' in e) {
+            if (e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            if (e.changedTouches.length > 0) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+            return { x: 0, y: 0 };
+        }
+        return { x: (e as React.MouseEvent).clientX, y: (e as React.MouseEvent).clientY };
+    };
+
     const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>): Point => {
         const canvas = canvasRef.current; const background = backgroundRef.current;
         if (!canvas || !background) return { x: 0, y: 0 };
@@ -2218,8 +2216,13 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         return { x: finalX, y: finalY };
     };
 
-    const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-        e.preventDefault();
+    const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+        if ('touches' in e) {
+            if (e.touches.length > 1) return;
+            // e.preventDefault(); // Let it bubble or prevent? If we prevent, we stop mouse emulation.
+        }
+        // e.preventDefault(); // We might want to prevent default for touch to stop scrolling/mouse emulation
+
         const startPoint = getCanvasCoordinates(e);
 
         // Calculate scale for hit testing
@@ -2245,15 +2248,22 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
                 if (objectToSelect && objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) { setTargetObjectId(objectToSelect.id); objectImageInputRef.current?.click(); return; }
                 if (objectToSelect) { setSelectedObjectId(objectToSelect.id); setActionState({ type: 'moving', startPoint, initialObject: objectToSelect }); }
-                else { setSelectedObjectId(null); setActionState({ type: 'panning', panStartPoint: { x: e.clientX, y: e.clientY } }); }
+                else {
+                    setSelectedObjectId(null);
+                    const clientPt = getClientCoordinates(e);
+                    setActionState({ type: 'panning', panStartPoint: clientPt });
+                }
             }
         }
     };
 
-    const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+        if ('touches' in e && e.touches.length > 1) return;
+
         if (actionState.type === 'panning' && actionState.panStartPoint) {
-            const dx = e.clientX - actionState.panStartPoint.x; const dy = e.clientY - actionState.panStartPoint.y;
-            setPan(p => ({ x: p.x + dx, y: p.y + dy })); setActionState(s => ({ ...s, panStartPoint: { x: e.clientX, y: e.clientY } })); return;
+            const clientPt = getClientCoordinates(e);
+            const dx = clientPt.x - actionState.panStartPoint.x; const dy = clientPt.y - actionState.panStartPoint.y;
+            setPan(p => ({ x: p.x + dx, y: p.y + dy })); setActionState(s => ({ ...s, panStartPoint: clientPt })); return;
         }
         if (actionState.type === 'idle') return;
         const currentPoint = getCanvasCoordinates(e); const { type, startPoint } = actionState;
@@ -2269,7 +2279,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         }
     };
 
-    const handleCanvasMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const handleCanvasMouseUp = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
         if (actionState.type === 'panning') { setActionState({ type: 'idle' }); return; }
         if (actionState.type === 'idle') return;
         const endPoint = getCanvasCoordinates(e); const { type, startPoint } = actionState;
@@ -3031,6 +3041,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                         onMouseMove={handleCanvasMouseMove}
                                         onMouseUp={handleCanvasMouseUp}
                                         onMouseLeave={handleCanvasMouseUp}
+                                        onTouchStart={handleCanvasMouseDown}
+                                        onTouchMove={handleCanvasMouseMove}
+                                        onTouchEnd={handleCanvasMouseUp}
                                     />
 
                                 </div>
