@@ -1496,9 +1496,21 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     const imageBytes = await fetch(flattenedDataUrl).then(res => res.arrayBuffer());
                     const image = await pdfDoc.embedJpg(imageBytes);
                     const { width, height } = image;
+                    // For Image pages, we use the image's natural dimensions.
+                    // If rotation is 90/270, we swap page dimensions.
                     const isRotated = page.rotation === 90 || page.rotation === 270;
                     const pdfPage = pdfDoc.addPage(isRotated ? [height, width] : [width, height]);
-                    const drawOptions: any = { width: image.width, height: image.height, rotate: degrees(-page.rotation) };
+
+                    // Draw the flattened image (which contains the background image + drawn objects)
+                    // We draw it at 0,0 with full width/height.
+                    // Rotation is handled by drawing options.
+                    const drawOptions: any = {
+                        x: 0,
+                        y: 0,
+                        width: image.width,
+                        height: image.height,
+                        rotate: degrees(-page.rotation)
+                    };
 
                     if (page.rotation === 90) { drawOptions.x = image.width; drawOptions.y = 0; }
                     else if (page.rotation === 180) { drawOptions.x = image.width; drawOptions.y = image.height; }
@@ -2131,10 +2143,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         return { 'top-left': { x: minX, y: minY }, 'top-right': { x: maxX, y: minY }, 'bottom-left': { x: minX, y: maxY }, 'bottom-right': { x: maxX, y: maxY }, };
     };
 
-    const getHandleAtPoint = (point: Point, object: EditorObject | null): string | null => {
+    const getHandleAtPoint = (point: Point, object: EditorObject | null, scale: number = 1): string | null => {
         if (!object) return null;
         // if (object.type === 'image-placeholder' && object.imageData) { return null; }
-        const handles = getHandlesForObject(object); const handleSize = 8;
+        const handles = getHandlesForObject(object);
+        // Increase hit threshold for easier touch (30px screen size converted to natural pixels if needed)
+        // Since point and handles are in Natural coords (for images), and we want 30px Screen threshold:
+        // Threshold = 30 / scale
+        const handleSize = 30 / scale;
+
         for (const [name, pos] of Object.entries(handles)) {
             if (point.x >= pos.x - handleSize / 2 && point.x <= pos.x + handleSize / 2 && point.y >= pos.y - handleSize / 2 && point.y <= pos.y + handleSize / 2) { return name; }
         }
@@ -2162,8 +2179,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         let unrotatedWidth, unrotatedHeight;
 
         if (viewedPage.source.type === 'image') {
-            unrotatedWidth = background.clientWidth;
-            unrotatedHeight = background.clientHeight;
+            // Use NATURAL dimensions for images to ensure consistent coordinate system regardless of display size
+            const imgElement = background as HTMLImageElement;
+            unrotatedWidth = imgElement.naturalWidth || background.clientWidth;
+            unrotatedHeight = imgElement.naturalHeight || background.clientHeight;
         } else {
             unrotatedWidth = isSwapped ? background.clientHeight : background.clientWidth;
             unrotatedHeight = isSwapped ? background.clientWidth : background.clientHeight;
@@ -2177,6 +2196,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         e.preventDefault();
         const startPoint = getCanvasCoordinates(e);
 
+        // Calculate scale for hit testing
+        let scale = 1;
+        if (viewedPage?.source.type === 'image' && backgroundRef.current) {
+            const img = backgroundRef.current as HTMLImageElement;
+            if (img.naturalWidth) {
+                scale = img.clientWidth / img.naturalWidth;
+            }
+        }
+
         if (isDrawingToolActive) {
             if (activeTool === 'text') {
                 // New logic: handled in MouseUp for click-to-place
@@ -2185,7 +2213,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             }
             else { setActionState({ type: 'drawing', startPoint }); setSelectedObjectId(null); }
         } else {
-            const handle = getHandleAtPoint(startPoint, selectedObject);
+            const handle = getHandleAtPoint(startPoint, selectedObject, scale);
             if (handle) { setActionState({ type: 'resizing', startPoint, handle, initialObject: selectedObject! }); }
             else {
                 const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
@@ -2523,9 +2551,20 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const { clientWidth, clientHeight } = image;
         if (canvas.width !== clientWidth || canvas.height !== clientHeight) { canvas.width = clientWidth; canvas.height = clientHeight; }
         else { ctx.clearRect(0, 0, canvas.width, canvas.height); }
+
+        let scaleX = 1;
+        let scaleY = 1;
+        if (viewedPage.source.type === 'image') {
+            const img = image as HTMLImageElement;
+            if (img.naturalWidth && img.naturalHeight) {
+                scaleX = img.clientWidth / img.naturalWidth;
+                scaleY = img.clientHeight / img.naturalHeight;
+            }
+        }
+
         const objectsToDraw = previewObject ? viewedPage.objects.filter(o => o.id !== previewObject.id) : viewedPage.objects;
-        objectsToDraw.forEach(obj => drawObject(ctx, obj));
-        if (previewObject) { drawObject(ctx, previewObject); }
+        objectsToDraw.forEach(obj => drawObject(ctx, obj, { scaleX, scaleY }));
+        if (previewObject) { drawObject(ctx, previewObject, { scaleX, scaleY }); }
 
         const currentSelectedObject = previewObject && previewObject.id === selectedObjectId ? previewObject : selectedObject;
         if (currentSelectedObject) {
