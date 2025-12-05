@@ -1727,6 +1727,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const handleResetZoom = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
     // Helper to wrap text
+    // Helper to wrap text
     const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
         const paragraphs = text.split('\n');
         let lines: string[] = [];
@@ -1755,13 +1756,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     // Helper to add object to center of view
     const addObjectToCenter = (type: EditorObject['type'], data: any = {}) => {
-        if (!viewedPage) return;
+        console.log("addObjectToCenter called", type, data);
+        if (!viewedPage) { console.error("No viewedPage"); return; }
 
         const canvas = canvasRef.current;
         const background = backgroundRef.current;
-        if (!canvas || !background) return;
+        if (!canvas || !background) { console.error("No canvas or background ref", { canvas, background }); return; }
 
         const rect = background.getBoundingClientRect();
+        console.log("Background rect:", rect);
 
         // Calculate center of visible viewport relative to the background element
         const viewportCenterX = window.innerWidth / 2;
@@ -1782,13 +1785,22 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const unscaledY = rotatedY / zoom;
 
         const isSwapped = rotation % 180 !== 0;
-        const unrotatedWidth = isSwapped ? background.clientHeight : background.clientWidth;
-        const unrotatedHeight = isSwapped ? background.clientWidth : background.clientHeight;
+
+        // Fix for Image vs PDF rotation handling
+        let unrotatedWidth, unrotatedHeight;
+        if (viewedPage.source.type === 'image') {
+            unrotatedWidth = background.clientWidth;
+            unrotatedHeight = background.clientHeight;
+        } else {
+            unrotatedWidth = isSwapped ? background.clientHeight : background.clientWidth;
+            unrotatedHeight = isSwapped ? background.clientWidth : background.clientHeight;
+        }
 
         const spX = (unrotatedWidth / 2) + unscaledX;
         const spY = (unrotatedHeight / 2) + unscaledY;
 
         const sp = { x: spX, y: spY };
+        console.log("Calculated sp:", sp);
 
         let newObject: EditorObject = {
             id: `obj_${Date.now()}`,
