@@ -2880,6 +2880,30 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     );
 };
 
+const ConfirmModal: React.FC<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    onCancel: () => void;
+}> = ({ isOpen, title, message, onConfirm, onCancel }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[70] p-4" onClick={onCancel}>
+            <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="p-6">
+                    <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
+                    <p className="text-slate-300">{message}</p>
+                </div>
+                <div className="p-4 bg-slate-800/50 border-t border-slate-700 flex justify-end gap-3">
+                    <button onClick={onCancel} className="px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-700 transition-colors text-sm font-medium">取消</button>
+                    <button onClick={onConfirm} className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold shadow-lg shadow-red-500/25 text-sm transition-all">確認刪除</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const App: React.FC = () => {
     const [view, setView] = useState<'home' | 'editor' | 'merge-sort'>('home');
     const [projects, setProjects] = useState<ProjectMetadata[]>([]);
@@ -2891,6 +2915,9 @@ const App: React.FC = () => {
     const [mergeFiles, setMergeFiles] = useState<File[]>([]);
     const [sortedMergeFiles, setSortedMergeFiles] = useState<MergeFileData[]>([]);
     const [showFileSortModal, setShowFileSortModal] = useState(false);
+
+    // Delete Confirmation State
+    const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; projectId: string | null }>({ isOpen: false, projectId: null });
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const mergeInputRef = useRef<HTMLInputElement>(null);
@@ -2956,9 +2983,23 @@ const App: React.FC = () => {
         await dbService.saveProject(project); setCurrentProject(project); setView('editor'); loadProjects();
     };
 
-    const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
+    const handleDeleteProject = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (confirm("確定要刪除此專案嗎？此動作無法復原。")) { await dbService.deleteProject(id); loadProjects(); }
+        e.preventDefault();
+        setDeleteConfirm({ isOpen: true, projectId: id });
+    };
+
+    const confirmDeleteProject = async () => {
+        if (!deleteConfirm.projectId) return;
+        try {
+            await dbService.deleteProject(deleteConfirm.projectId);
+            loadProjects();
+        } catch (error) {
+            console.error("Failed to delete project:", error);
+            alert("刪除失敗，請稍後再試。");
+        } finally {
+            setDeleteConfirm({ isOpen: false, projectId: null });
+        }
     };
 
     const handleOpenProject = async (id: string) => {
@@ -3001,8 +3042,8 @@ const App: React.FC = () => {
                                     <FileIcon className="w-6 h-6 text-white" />
                                 </div>
                                 <div>
-                                    <h1 className="text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">PDF 編輯工具</h1>
-                                    <p className="text-slate-500 text-sm mt-1">輕鬆分割、合併與編輯您的 PDF 文件</p>
+                                    <h1 className="text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">照片與PDF 編輯工具</h1>
+                                    <p className="text-slate-500 text-sm mt-1">輕鬆分割、合併與編輯您的照片或PDF 文件</p>
                                 </div>
                             </div>
                             <div className="flex gap-4 w-full md:w-auto">
@@ -3011,7 +3052,7 @@ const App: React.FC = () => {
                                     className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 rounded-xl transition-all duration-200 text-sm font-medium group shadow-sm hover:shadow-md"
                                 >
                                     <MergeIcon className="w-5 h-5 text-slate-400 group-hover:text-indigo-400 transition-colors" />
-                                    <span className="text-slate-300 group-hover:text-white">合併 PDF</span>
+                                    <span className="text-slate-300 group-hover:text-white">PDF合併與排序</span>
                                 </button>
                                 <button
                                     onClick={() => fileInputRef.current?.click()}
@@ -3045,7 +3086,7 @@ const App: React.FC = () => {
                                         {/* Floating Actions */}
                                         <button
                                             onClick={(e) => handleDeleteProject(project.id, e)}
-                                            className="absolute top-3 right-3 p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100 translate-y-[-10px] group-hover:translate-y-0"
+                                            className="absolute top-3 right-3 p-2 text-slate-400 hover:text-red-400 bg-slate-900/50 hover:bg-red-500/10 rounded-lg transition-all z-20"
                                             title="刪除專案"
                                         >
                                             <TrashIcon className="w-4 h-4" />
@@ -3089,6 +3130,13 @@ const App: React.FC = () => {
                     <input type="file" ref={fileInputRef} multiple accept="application/pdf,image/*" className="hidden" onChange={handleCreateProject} />
                     <input type="file" ref={mergeInputRef} multiple accept="application/pdf" className="hidden" onChange={handleMergeSelect} />
                     {showFileSortModal && <FileSortModal files={mergeFiles} onCancel={() => setShowFileSortModal(false)} onConfirm={handleMergeConfirm} />}
+                    <ConfirmModal
+                        isOpen={deleteConfirm.isOpen}
+                        title="刪除專案"
+                        message="確定要刪除此專案嗎？此動作無法復原。"
+                        onConfirm={confirmDeleteProject}
+                        onCancel={() => setDeleteConfirm({ isOpen: false, projectId: null })}
+                    />
                 </div>
             )}
 
