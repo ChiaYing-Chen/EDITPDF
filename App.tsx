@@ -936,12 +936,33 @@ type ActionState = {
 
 type CompressionLevel = 'high' | 'standard' | 'low';
 
+// Helper to convert image to PDF
+const convertImageToPdf = async (imageFile: File): Promise<Blob> => {
+    const pdfDoc = await PDFDocument.create();
+    const imageBytes = await imageFile.arrayBuffer();
+    let image;
+    if (imageFile.type === 'image/png') {
+        image = await pdfDoc.embedPng(imageBytes);
+    } else {
+        image = await pdfDoc.embedJpg(imageBytes);
+    }
+    const { width, height } = image;
+    const page = pdfDoc.addPage([width, height]);
+    page.drawImage(image, { x: 0, y: 0, width, height });
+    const pdfBytes = await pdfDoc.save();
+    return new Blob([pdfBytes], { type: 'application/pdf' });
+};
+
+interface EditorPageProps {
+    project: StoredProject;
+    onSave: (project: StoredProject) => void;
+    onClose: () => void;
+}
+
 const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => {
-    // ... (Editor logic)
     const fileInputRef = useRef<HTMLInputElement>(null);
     const objectImageInputRef = useRef<HTMLInputElement>(null);
 
-    // History state for undo/redo
     const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 768);
     const [history, setHistory] = useState<EditorPageState[]>([{ ...project, pdfAssets: project.pdfAssets || {}, pages: project.pages.map(p => ({ ...p, rotation: p.rotation ?? 0, objects: p.objects || [] })) }]);
     const [historyIndex, setHistoryIndex] = useState(0);
@@ -1616,21 +1637,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         event.target.value = '';
     };
 
-    const convertImageToPdf = async (imageFile: File): Promise<Blob> => {
-        const pdfDoc = await PDFDocument.create();
-        const imageBytes = await imageFile.arrayBuffer();
-        let image;
-        if (imageFile.type === 'image/png') {
-            image = await pdfDoc.embedPng(imageBytes);
-        } else {
-            image = await pdfDoc.embedJpg(imageBytes); // Fallback to JPG embedding for others (or try/catch)
-        }
-        const { width, height } = image;
-        const page = pdfDoc.addPage([width, height]);
-        page.drawImage(image, { x: 0, y: 0, width, height });
-        const pdfBytes = await pdfDoc.save();
-        return new Blob([pdfBytes], { type: 'application/pdf' });
-    };
+
 
     const onAddFilesChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
@@ -3165,7 +3172,18 @@ const App: React.FC = () => {
                     for (let j = 1; j <= pdf.numPages; j++) {
                         newPages.push({ id: `page_${Date.now()}_${i}_${j}`, source: { type: 'pdf', pdfId, pageIndex: j }, rotation: 0, objects: [] });
                     }
-                } else if (file.type.startsWith('image/')) { newPages.push({ id: `page_${Date.now()}_${i}`, source: { type: 'image', data: file }, rotation: 0, objects: [] }); }
+                } else if (file.type.startsWith('image/')) {
+                    // Convert image to PDF immediately for new projects
+                    try {
+                        const pdfBlob = await convertImageToPdf(file);
+                        const pdfId = `pdf_from_img_${Date.now()}_${i}`;
+                        pdfAssets[pdfId] = pdfBlob;
+                        newPages.push({ id: `page_${Date.now()}_${i}`, source: { type: 'pdf', pdfId, pageIndex: 1 }, rotation: 0, objects: [] });
+                    } catch (err) {
+                        console.error("Failed to convert image to PDF", err);
+                        alert(`無法轉換圖片 ${file.name}`);
+                    }
+                }
             }
             if (newPages.length === 0) { throw new Error("No valid pages created"); }
 
