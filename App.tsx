@@ -1847,8 +1847,21 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         setActiveTool('move');
     };
 
-    const handlersRef = useRef({ handleSaveAndDownload, handleUndo, canUndo, stamps });
-    handlersRef.current = { handleSaveAndDownload, handleUndo, canUndo, stamps };
+    const deleteSelectedObject = () => {
+        if (!selectedObjectId || !viewedPageId) return;
+        const newPages = state.pages.map(p => {
+            if (p.id === viewedPageId) {
+                return { ...p, objects: p.objects.filter(obj => obj.id !== selectedObjectId) };
+            }
+            return p;
+        });
+        const newState = { ...state, pages: newPages };
+        updateState(newState);
+        setSelectedObjectId(null);
+    };
+
+    const handlersRef = useRef({ handleSaveAndDownload, handleUndo, canUndo, stamps, deleteSelectedObject });
+    handlersRef.current = { handleSaveAndDownload, handleUndo, canUndo, stamps, deleteSelectedObject };
 
     const handleStampToolSelect = (stamp: StampConfig) => {
         // Auto-place stamp
@@ -1865,6 +1878,20 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handlersRef.current.handleSaveAndDownload(); }
             if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); if (handlersRef.current.canUndo) { handlersRef.current.handleUndo(); } }
+
+            // Delete object
+            if ((e.key === 'Delete' || e.key === 'Backspace')) {
+                const activeTag = document.activeElement?.tagName.toLowerCase();
+                if (activeTag !== 'input' && activeTag !== 'textarea') {
+                    // Prevent default only if we are taking action (to avoid blocking backspace navigation if appropriate, though single page apps usually trap it)
+                    // Actually, for backspace, we definitely want to prevent navigation if we are deleting an object.
+                    // If no object is selected, we might let it propagate? 
+                    // But here we rely on the handler to know if something is selected. 
+                    // Let's modify handlersRef.current.deleteSelectedObject to return true if it did work?
+                    // Or just call it. If selectedObjectId is null, it does nothing.
+                    handlersRef.current.deleteSelectedObject();
+                }
+            }
 
             // Stamp shortcuts
             if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
@@ -2106,7 +2133,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const getHandleAtPoint = (point: Point, object: EditorObject | null): string | null => {
         if (!object) return null;
-        if (object.type === 'image-placeholder' && object.imageData) { return null; }
+        // if (object.type === 'image-placeholder' && object.imageData) { return null; }
         const handles = getHandlesForObject(object); const handleSize = 8;
         for (const [name, pos] of Object.entries(handles)) {
             if (point.x >= pos.x - handleSize / 2 && point.x <= pos.x + handleSize / 2 && point.y >= pos.y - handleSize / 2 && point.y <= pos.y + handleSize / 2) { return name; }
