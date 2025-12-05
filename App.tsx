@@ -1017,10 +1017,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [activeStamp, setActiveStamp] = useState<StampConfig | null>(null);
 
     // Toolbar dragging state for mobile
-    const [toolbarY, setToolbarY] = useState(50); // Percentage (50%)
+    // Toolbar dragging state for mobile
+    const [toolbarPos, setToolbarPos] = useState({ x: window.innerWidth - 80, y: window.innerHeight / 2 });
     const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
-    const toolbarDragStartY = useRef(0);
-    const toolbarInitialY = useRef(50);
+    const toolbarDragStart = useRef({ x: 0, y: 0 });
+    const toolbarInitialPos = useRef({ x: 0, y: 0 });
 
     const viewedPage = state?.pages?.find(p => p.id === viewedPageId) || state?.pages?.[0];
     const viewedPageIndex = state?.pages?.findIndex(p => p.id === viewedPageId) ?? -1;
@@ -1579,20 +1580,27 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         // Use selectedObjectId if targetObjectId is not set (fallback for immediate selection)
         const targetId = targetObjectId || selectedObjectId;
 
-        if (!files || files.length === 0 || !targetId || !viewedPageId) return;
+        if (!files || files.length === 0 || !viewedPageId) return;
         const file = files[0];
-        const newPages = state.pages.map(p => {
-            if (p.id === viewedPageId) {
-                const newObjects = p.objects.map(obj => {
-                    if (obj.id === targetId) { return { ...obj, imageData: file }; }
-                    return obj;
-                });
-                return { ...p, objects: newObjects };
-            }
-            return p;
-        });
-        updateState({ ...state, pages: newPages });
-        setTargetObjectId(null);
+
+        if (targetId) {
+            // Update existing object
+            const newPages = state.pages.map(p => {
+                if (p.id === viewedPageId) {
+                    const newObjects = p.objects.map(obj => {
+                        if (obj.id === targetId) { return { ...obj, imageData: file }; }
+                        return obj;
+                    });
+                    return { ...p, objects: newObjects };
+                }
+                return p;
+            });
+            updateState({ ...state, pages: newPages });
+            setTargetObjectId(null);
+        } else {
+            // Create new image object at center
+            addObjectToCenter('image-placeholder', { imageData: file });
+        }
         event.target.value = '';
     };
 
@@ -1718,12 +1726,126 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const handleZoomOut = () => setZoom(z => Math.max(z - 0.1, 0.2));
     const handleResetZoom = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
+    // Helper to wrap text
+    const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
+        const paragraphs = text.split('\n');
+        let lines: string[] = [];
+
+        paragraphs.forEach(paragraph => {
+            const chars = paragraph.split('');
+            let line = '';
+
+            for (let n = 0; n < chars.length; n++) {
+                const testLine = line + chars[n];
+                const metrics = ctx.measureText(testLine);
+                const testWidth = metrics.width;
+
+                if (testWidth > maxWidth && n > 0) {
+                    lines.push(line);
+                    line = chars[n];
+                } else {
+                    line = testLine;
+                }
+            }
+            lines.push(line);
+        });
+
+        return lines;
+    };
+
+    // Helper to add object to center of view
+    const addObjectToCenter = (type: EditorObject['type'], data: any = {}) => {
+        if (!viewedPage) return;
+
+        const canvas = canvasRef.current;
+        const background = backgroundRef.current;
+        if (!canvas || !background) return;
+
+        const rect = background.getBoundingClientRect();
+
+        // Calculate center of visible viewport relative to the background element
+        const viewportCenterX = window.innerWidth / 2;
+        const viewportCenterY = window.innerHeight / 2;
+
+        const imageCenterX = rect.left + rect.width / 2;
+        const imageCenterY = rect.top + rect.height / 2;
+
+        let vecX = viewportCenterX - imageCenterX;
+        let vecY = viewportCenterY - imageCenterY;
+
+        const rotation = viewedPage.rotation;
+        const angleRad = -rotation * (Math.PI / 180);
+        const rotatedX = vecX * Math.cos(angleRad) - vecY * Math.sin(angleRad);
+        const rotatedY = vecX * Math.sin(angleRad) + vecY * Math.cos(angleRad);
+
+        const unscaledX = rotatedX / zoom;
+        const unscaledY = rotatedY / zoom;
+
+        const isSwapped = rotation % 180 !== 0;
+        const unrotatedWidth = isSwapped ? background.clientHeight : background.clientWidth;
+        const unrotatedHeight = isSwapped ? background.clientWidth : background.clientHeight;
+
+        const spX = (unrotatedWidth / 2) + unscaledX;
+        const spY = (unrotatedHeight / 2) + unscaledY;
+
+        const sp = { x: spX, y: spY };
+
+        let newObject: EditorObject = {
+            id: `obj_${Date.now()}`,
+            type,
+            sp,
+            ep: { x: sp.x + 100, y: sp.y + 100 }, // Default size, will be adjusted
+            color: drawingColor,
+            strokeWidth: 2,
+            ...data
+        };
+
+        if (type === 'text') {
+            const ctx = canvas?.getContext('2d');
+            let width = 200;
+            let height = 50;
+            if (ctx) {
+                ctx.font = `${data.fontSize}px ${data.fontFamily}`;
+                const metrics = ctx.measureText(data.text);
+                width = Math.min(metrics.width + 10, 400);
+                const lines = wrapText(ctx, data.text, width);
+                height = lines.length * (data.fontSize * 1.2);
+            }
+            newObject.ep = { x: sp.x + width, y: sp.y + height };
+        } else if (type === 'stamp') {
+            const defaultWidth = Math.max(100, data.text.length * data.fontSize);
+            const defaultHeight = data.fontSize * 2.5;
+            newObject.ep = { x: sp.x + defaultWidth, y: sp.y + defaultHeight };
+        } else if (type === 'image-placeholder' && data.imageData) {
+            newObject.ep = { x: sp.x + 200, y: sp.y + 200 };
+        }
+
+        // Center the object around the calculated point
+        const w = newObject.ep.x - newObject.sp.x;
+        const h = newObject.ep.y - newObject.sp.y;
+        newObject.sp.x -= w / 2;
+        newObject.sp.y -= h / 2;
+        newObject.ep.x -= w / 2;
+        newObject.ep.y -= h / 2;
+
+        const newObjects = [...viewedPage.objects, newObject];
+        const newState = { ...state, pages: state.pages.map(p => p.id === viewedPageId ? { ...p, objects: newObjects } : p) };
+        updateState(newState);
+        setSelectedObjectId(newObject.id);
+        setActiveTool('move');
+    };
+
     const handlersRef = useRef({ handleSaveAndDownload, handleUndo, canUndo, stamps });
     handlersRef.current = { handleSaveAndDownload, handleUndo, canUndo, stamps };
 
     const handleStampToolSelect = (stamp: StampConfig) => {
-        setActiveTool('stamp');
-        setActiveStamp(stamp);
+        // Auto-place stamp
+        addObjectToCenter('stamp', {
+            text: stamp.text,
+            color: stamp.textColor,
+            backgroundColor: stamp.backgroundColor,
+            fontSize: stamp.fontSize
+        });
         setShowStampPicker(false);
     };
 
@@ -1933,20 +2055,20 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     // Toolbar Drag Handlers for Mobile
     const handleToolbarDragStart = (e: React.TouchEvent) => {
         setIsDraggingToolbar(true);
-        toolbarDragStartY.current = e.touches[0].clientY;
-        toolbarInitialY.current = toolbarY;
+        toolbarDragStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        toolbarInitialPos.current = { ...toolbarPos };
     };
 
     const handleToolbarDragMove = (e: React.TouchEvent) => {
         if (!isDraggingToolbar) return;
         e.preventDefault(); // Prevent scrolling
-        const deltaY = e.touches[0].clientY - toolbarDragStartY.current;
-        const windowHeight = window.innerHeight;
-        const percentageDelta = (deltaY / windowHeight) * 100;
-        let newY = toolbarInitialY.current + percentageDelta;
-        // Constrain to typical screen bounds (e.g., 10% to 90%)
-        newY = Math.max(10, Math.min(90, newY));
-        setToolbarY(newY);
+        const deltaX = e.touches[0].clientX - toolbarDragStart.current.x;
+        const deltaY = e.touches[0].clientY - toolbarDragStart.current.y;
+
+        setToolbarPos({
+            x: toolbarInitialPos.current.x + deltaX,
+            y: toolbarInitialPos.current.y + deltaY
+        });
     };
 
     const handleToolbarDragEnd = () => {
@@ -2222,51 +2344,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
 
     const handleTextConfirm = (text: string, color: string, fontSize: number, fontFamily: string) => {
-        setPendingTextConfig({ text, color, fontSize, fontFamily });
+        addObjectToCenter('text', { text, color, fontSize, fontFamily });
         setDrawingColor(color);
         setFontSize(fontSize);
         setFontFamily(fontFamily);
         setShowTextModal(false);
-        setActiveTool('text');
     };
 
-    // Helper to wrap text
-    const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
-        const words = text.split(''); // Split by char for CJK support? Or words for English?
-        // For mixed content, character splitting is safer for wrapping, but English words shouldn't be split mid-word ideally.
-        // Simple approach: split by words if space exists, else chars.
-        // Given "Chinese" requirement, char splitting is better.
-        // But let's try a hybrid approach or just char splitting for now as it's robust for CJK.
-        // Actually, standard canvas text wrapping usually splits by words.
-        // Let's stick to a simple char-based loop for now to ensure strict width compliance.
 
-        let lines: string[] = [];
-        let currentLine = '';
-
-        // Preserve existing newlines
-        const paragraphs = text.split('\n');
-
-        paragraphs.forEach(paragraph => {
-            const chars = paragraph.split('');
-            let line = '';
-
-            for (let n = 0; n < chars.length; n++) {
-                const testLine = line + chars[n];
-                const metrics = ctx.measureText(testLine);
-                const testWidth = metrics.width;
-
-                if (testWidth > maxWidth && n > 0) {
-                    lines.push(line);
-                    line = chars[n];
-                } else {
-                    line = testLine;
-                }
-            }
-            lines.push(line);
-        });
-
-        return lines;
-    };
 
     function drawObject(ctx: CanvasRenderingContext2D, obj: EditorObject, options: { scaleX?: number, scaleY?: number } = {}) {
         const { scaleX = 1, scaleY = 1 } = options;
@@ -2577,20 +2662,22 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
                 {/* Toolbar */}
                 <div
-                    style={{ top: `${toolbarY}%` }}
+                    style={{ left: `${toolbarPos.x}px`, top: `${toolbarPos.y}px` }}
                     className={`
-                    z-30 transition-all
-                    fixed right-2 -translate-y-1/2 flex flex-col gap-4 bg-slate-800/90 p-2 rounded-2xl shadow-2xl backdrop-blur-md max-h-[70vh] overflow-y-auto no-scrollbar border border-slate-600/50
+                    z-30 transition-shadow
+                    fixed flex flex-col gap-4 bg-slate-800/90 p-2 rounded-2xl shadow-2xl backdrop-blur-md max-h-[70vh] overflow-y-auto no-scrollbar border border-slate-600/50
                     md:static md:flex-row md:translate-y-0 md:bg-slate-900/30 md:shadow-none md:p-2 md:h-auto md:w-full md:justify-center md:overflow-visible md:border-0
                 `}>
                     {/* Mobile Drag Handle */}
                     <div
-                        className="md:hidden flex justify-center cursor-ns-resize py-1 -mt-2 mb-1"
+                        className="md:hidden flex flex-col items-center justify-center cursor-move py-2 -mt-2 mb-1 gap-1"
                         onTouchStart={handleToolbarDragStart}
                         onTouchMove={handleToolbarDragMove}
                         onTouchEnd={handleToolbarDragEnd}
                     >
-                        <div className="w-8 h-1 bg-slate-600 rounded-full opacity-50"></div>
+                        <div className="w-8 h-1 bg-slate-500 rounded-full"></div>
+                        <div className="w-8 h-1 bg-slate-500 rounded-full"></div>
+                        <div className="w-8 h-1 bg-slate-500 rounded-full"></div>
                     </div>
 
                     <div className="flex flex-col md:flex-row items-center gap-3 md:gap-4">
@@ -2635,7 +2722,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                             </div>
 
                             <button onClick={() => setShowTextModal(true)} title="文字" className={`p-2 rounded-full transition-all ${activeTool === 'text' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <TextIcon className="w-5 h-5" /> </button>
-                            <button onClick={() => setActiveTool('image-placeholder')} title="疊加圖片" className={`p-2 rounded-full transition-all ${activeTool === 'image-placeholder' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <ImageIcon className="w-5 h-5" /> </button>
+                            <button onClick={() => objectImageInputRef.current?.click()} title="疊加圖片" className={`p-2 rounded-full transition-all ${activeTool === 'image-placeholder' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <ImageIcon className="w-5 h-5" /> </button>
 
                             <button
                                 onClick={() => setShowStampPicker(true)}
