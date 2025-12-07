@@ -4,7 +4,8 @@ import * as pdfjsLib from 'pdfjs-dist';
 import Dexie, { type Table } from 'dexie';
 import PDFPageView from './PDFPageView';
 import TextEditorModal from './TextEditorModal';
-import { ProjectMetadata, StoredProject, EditorPageProps, EditorPageState, CompressionQuality, EditorObject, DrawingTool, PageData, StampConfig } from './types';
+import { ProjectMetadata, StoredProject, EditorPageState, CompressionQuality, EditorObject, DrawingTool, PageData, StampConfig } from './types';
+import TriangleSizeSlider from './TriangleSizeSlider';
 
 // Configure the PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://esm.sh/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
@@ -1048,6 +1049,23 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const viewedPage = state?.pages?.find(p => p.id === viewedPageId) || state?.pages?.[0];
     const viewedPageIndex = state?.pages?.findIndex(p => p.id === viewedPageId) ?? -1;
+
+    // Helper to calculate scale factor for screen-relative sizing
+    const calculateScaleFactor = useCallback(() => {
+        if (!backgroundRef.current || !viewedPage) return 1 / zoom;
+        const rect = backgroundRef.current.getBoundingClientRect();
+
+        if (viewedPage.source.type === 'image') {
+            const imgElement = backgroundRef.current as HTMLImageElement;
+            const naturalWidth = imgElement.naturalWidth || rect.width;
+            return naturalWidth / rect.width;
+        } else {
+            // For PDF, coordinates are currently mapped 1:1 to screen pixels at zoom 1
+            // So we just need to account for current zoom
+            return 1 / zoom;
+        }
+    }, [viewedPage, zoom]);
+
     const selectedObject = viewedPage?.objects?.find(o => o.id === selectedObjectId) || null;
     const isDrawingToolActive = activeTool && activeTool !== 'move';
 
@@ -1633,12 +1651,17 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             updateState({ ...state, pages: newPages });
             setTargetObjectId(null);
         } else {
-            // Create new image object at center with correct aspect ratio
+            // Create new image object using screen-relative sizing (1/10th of screen)
             const img = new Image();
             const url = URL.createObjectURL(file);
             img.onload = () => {
                 const aspect = img.naturalWidth / img.naturalHeight;
-                addObjectToCenter('image-placeholder', { imageData: file, aspect });
+                // Target width is 1/10th of screen width (min 50px)
+                const screenTargetWidth = Math.max(50, window.innerWidth / 10);
+                const scaleFactor = calculateScaleFactor();
+                const pdfTargetWidth = screenTargetWidth * scaleFactor;
+
+                addObjectToCenter('image-placeholder', { imageData: file, aspect, width: pdfTargetWidth });
                 URL.revokeObjectURL(url);
             };
             img.src = url;
@@ -2420,6 +2443,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         let newObjects = [...(viewedPage?.objects || [])]; let changesMade = false;
         if (type === 'drawing' && startPoint) {
             const isDrag = Math.abs(startPoint.x - endPoint.x) > 5 || Math.abs(startPoint.y - endPoint.y) > 5;
+            const scaleFactor = calculateScaleFactor();
 
             if (activeTool === 'stamp' && activeStamp) {
                 let finalEp = endPoint;
@@ -2436,7 +2460,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     text: activeStamp.text,
                     color: activeStamp.textColor,
                     backgroundColor: activeStamp.backgroundColor,
-                    fontSize: activeStamp.fontSize,
+                    fontSize: activeStamp.fontSize * scaleFactor, // Apply scaling
                     strokeWidth: 0,
                 };
                 newObjects.push(newObject);
@@ -2465,7 +2489,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     ep: { x: startPoint.x + width, y: startPoint.y + height },
                     text: pendingTextConfig.text,
                     color: pendingTextConfig.color,
-                    fontSize: pendingTextConfig.fontSize,
+                    fontSize: pendingTextConfig.fontSize * scaleFactor, // Apply scaling
                     fontFamily: pendingTextConfig.fontFamily,
                     backgroundColor: 'transparent'
                 };
@@ -3035,12 +3059,27 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                     <input type="color" value={drawingColor} onChange={(e) => setDrawingColor(e.target.value)} className="w-8 h-8 rounded-full bg-transparent cursor-pointer border-none p-0 overflow-hidden ring-2 ring-slate-600" />
                                 )}
                                 {activeTool !== 'text' && activeTool !== 'stamp' && (
-                                    <div className="flex md:flex-row flex-col items-center gap-1">
-                                        {[2, 5, 10].map(width => (
-                                            <button key={width} onClick={() => setStrokeWidth(width)} className={`w-6 h-6 flex items-center justify-center rounded-full transition-colors ${strokeWidth === width ? 'bg-slate-500' : 'hover:bg-slate-700'}`}>
-                                                <div className="bg-white rounded-full" style={{ width: `${Math.min(width + 2, 14)}px`, height: `${Math.min(width + 2, 14)}px` }}></div>
-                                            </button>
-                                        ))}
+                                    <div className="flex items-center gap-2 pl-2">
+                                        <TriangleSizeSlider
+                                            value={strokeWidth}
+                                            onChange={(val) => setStrokeWidth(Math.max(1, Math.min(20, val)))}
+                                            min={1}
+                                            max={20}
+                                            color={drawingColor}
+                                        />
+                                        <span className="text-xs text-slate-400 w-4 text-center">{Math.round(strokeWidth)}</span>
+                                    </div>
+                                )}
+                                {activeTool === 'text' && (
+                                    <div className="flex items-center gap-2 pl-2">
+                                        <TriangleSizeSlider
+                                            value={fontSize}
+                                            onChange={(val) => setFontSize(Math.max(10, Math.min(100, val)))}
+                                            min={10}
+                                            max={100}
+                                            color={drawingColor}
+                                        />
+                                        <span className="text-xs text-slate-400 w-6 text-center">{Math.round(fontSize)}</span>
                                     </div>
                                 )}
                             </div>
