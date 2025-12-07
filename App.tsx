@@ -335,24 +335,14 @@ const StampPickerModal: React.FC<{
 const StampSettingsModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
-}> = ({ isOpen, onClose }) => {
-    const [stamps, setStamps] = useState<StampConfig[]>([]);
+    stamps: StampConfig[];
+    onUpdateStamps: (newStamps: StampConfig[]) => void;
+}> = ({ isOpen, onClose, stamps, onUpdateStamps }) => {
+    // Local state only for editing, not the list itself
     const [editingStamp, setEditingStamp] = useState<StampConfig | null>(null);
     const [isRecordingKey, setIsRecordingKey] = useState(false);
 
-    useEffect(() => {
-        const savedStamps = localStorage.getItem('pdf_editor_stamps');
-        if (savedStamps) {
-            setStamps(JSON.parse(savedStamps));
-        }
-    }, []);
-
-    useEffect(() => {
-        // When stamps change, save to local storage
-        if (stamps.length > 0 || localStorage.getItem('pdf_editor_stamps')) {
-            localStorage.setItem('pdf_editor_stamps', JSON.stringify(stamps));
-        }
-    }, [stamps]);
+    // Removed local storage effect from here, it's now in parent
 
     const handleSave = () => {
         if (!editingStamp) return;
@@ -363,25 +353,26 @@ const StampSettingsModal: React.FC<{
             return;
         }
 
-        setStamps(prev => {
-            const index = prev.findIndex(s => s.id === editingStamp.id);
-            if (index >= 0) {
-                const newStamps = [...prev];
-                newStamps[index] = editingStamp;
-                return newStamps;
-            } else {
-                if (prev.length >= 10) {
-                    alert("最多只能設定 10 組印章");
-                    return prev;
-                }
-                return [...prev, editingStamp];
+        // Create new stamps array
+        let newStampsList = [...stamps];
+        const index = stamps.findIndex(s => s.id === editingStamp.id);
+
+        if (index >= 0) {
+            newStampsList[index] = editingStamp;
+        } else {
+            if (stamps.length >= 10) {
+                alert("最多只能設定 10 組印章");
+                return;
             }
-        });
+            newStampsList.push(editingStamp);
+        }
+
+        onUpdateStamps(newStampsList);
         setEditingStamp(null);
     };
 
     const handleDelete = (id: string) => {
-        setStamps(prev => prev.filter(s => s.id !== id));
+        onUpdateStamps(stamps.filter(s => s.id !== id));
         if (editingStamp?.id === id) setEditingStamp(null);
     };
 
@@ -1035,7 +1026,18 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const [showStampSettings, setShowStampSettings] = useState(false);
     const [showStampPicker, setShowStampPicker] = useState(false); // State for stamp picker modal
-    const [stamps, setStamps] = useState<StampConfig[]>([]);
+
+    // Initialize stamps from localStorage
+    const [stamps, setStamps] = useState<StampConfig[]>(() => {
+        const saved = localStorage.getItem('pdf_editor_stamps');
+        return saved ? JSON.parse(saved) : [];
+    });
+
+    // Persist stamps changes
+    useEffect(() => {
+        localStorage.setItem('pdf_editor_stamps', JSON.stringify(stamps));
+    }, [stamps]);
+
     const [activeStamp, setActiveStamp] = useState<StampConfig | null>(null);
 
     // Toolbar dragging state for mobile
@@ -2763,7 +2765,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 </div>
             )}
 
-            <StampSettingsModal isOpen={showStampSettings} onClose={() => setShowStampSettings(false)} />
+            <StampSettingsModal
+                isOpen={showStampSettings}
+                onClose={() => setShowStampSettings(false)}
+                stamps={stamps}
+                onUpdateStamps={setStamps}
+            />
 
             <StampPickerModal
                 isOpen={showStampPicker}
