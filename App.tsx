@@ -1788,7 +1788,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
         if (!w || !h) return null;
 
-        const padding = 40;
+        const isMobile = window.innerWidth < 768;
+        const padding = isMobile ? 10 : 40;
         const availW = container.clientWidth - padding;
         const availH = container.clientHeight - padding;
 
@@ -1796,9 +1797,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
         const scaleX = availW / w;
         const scaleY = availH / h;
-        // Fit to screen, but don't upscale endlessly if image is tiny (cap at 1.0 or slightly more? User said full view.)
-        // Usually for editing, seeing it all is key.
-        // Let's just use min(scaleX, scaleY).
         return Math.min(scaleX, scaleY);
     };
 
@@ -2436,9 +2434,20 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const handleCanvasTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
         if (e.touches.length === 2) {
             if (isDrawingToolActive) { e.preventDefault(); return; }
-            e.preventDefault(); const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-            pinchState.current = { isPinching: true, initialDist: dist, initialZoom: zoom }; setActionState({ type: 'idle' });
+            e.preventDefault();
+            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            if (dist > 0 && isFinite(dist)) {
+                pinchState.current = { isPinching: true, initialDist: dist, initialZoom: zoom };
+                setActionState({ type: 'idle' });
+            }
         } else if (e.touches.length === 1) {
+            // Safety: If we were pinching, and now 1 finger, dragging should maybe wait or reset
+            if (pinchState.current.isPinching) {
+                pinchState.current.isPinching = false;
+                // Don't immediately start panning to avoid jumps
+                return;
+            }
+
             const touch = e.touches[0]; const startPoint = getCanvasCoordinates(e);
             if (isDrawingToolActive) { e.preventDefault(); if (activeTool !== 'text') { setActionState({ type: 'drawing', startPoint }); setSelectedObjectId(null); } }
             else {
@@ -2453,9 +2462,16 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const handleCanvasTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
         if (pinchState.current.isPinching && e.touches.length === 2) {
             if (isDrawingToolActive) return;
-            e.preventDefault(); const newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-            const scale = (newDist / pinchState.current.initialDist) * pinchState.current.initialZoom; setZoom(Math.max(0.2, Math.min(scale, 5)));
+            e.preventDefault();
+            const newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            if (newDist > 0 && isFinite(newDist) && pinchState.current.initialDist > 0) {
+                const scale = (newDist / pinchState.current.initialDist) * pinchState.current.initialZoom;
+                if (isFinite(scale)) {
+                    setZoom(Math.max(0.2, Math.min(scale, 5)));
+                }
+            }
         } else if (actionState.type === 'panning' && actionState.panStartPoint && e.touches.length === 1) {
+            if (pinchState.current.isPinching) return; // Ignore single touch if logic thinks we are pinching
             const touch = e.touches[0]; const dx = touch.clientX - actionState.panStartPoint.x; const dy = touch.clientY - actionState.panStartPoint.y;
             setPan(p => ({ x: p.x + dx, y: p.y + dy })); setActionState(s => ({ ...s, panStartPoint: { x: touch.clientX, y: touch.clientY } }));
         } else if ((actionState.type === 'drawing' || actionState.type === 'moving') && e.touches.length === 1) {
@@ -2469,7 +2485,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     };
 
     const handleCanvasTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
-        if (pinchState.current.isPinching) { pinchState.current.isPinching = false; }
+        if (pinchState.current.isPinching) {
+            if (e.touches.length === 0) {
+                pinchState.current.isPinching = false;
+            }
+        }
         else { handleCanvasMouseUp(e as unknown as React.MouseEvent<HTMLCanvasElement>); }
     };
 
