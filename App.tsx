@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import Dexie, { type Table } from 'dexie';
@@ -1024,6 +1024,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const thumbnailContainerRef = useRef<HTMLDivElement>(null);
     const pinchState = useRef({ isPinching: false, initialDist: 0, initialZoom: 1 });
     const lastScrollTime = useRef(0);
+    const shouldFitRef = useRef(true);
 
     const fileMenu = useDropdown();
     const rotateMenu = useDropdown();
@@ -1770,7 +1771,64 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 5));
     const handleZoomOut = () => setZoom(z => Math.max(z - 0.1, 0.2));
-    const handleResetZoom = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+
+    const calculateFitZoom = () => {
+        const bg = backgroundRef.current;
+        const container = document.getElementById('main-editor-view');
+        if (!bg || !container) return null;
+
+        let w, h;
+        if (viewedPage?.source.type === 'image') {
+            const img = bg as HTMLImageElement;
+            w = img.naturalWidth;
+            h = img.naturalHeight;
+        } else {
+            w = bg.clientWidth;
+            h = bg.clientHeight;
+        }
+
+        if (!w || !h) return null;
+
+        const padding = 40;
+        const availW = container.clientWidth - padding;
+        const availH = container.clientHeight - padding;
+
+        if (availW <= 0 || availH <= 0) return null;
+
+        const scaleX = availW / w;
+        const scaleY = availH / h;
+        // Fit to screen, but don't upscale endlessly if image is tiny (cap at 1.0 or slightly more? User said full view.)
+        // Usually for editing, seeing it all is key.
+        // Let's just use min(scaleX, scaleY).
+        return Math.min(scaleX, scaleY);
+    };
+
+    const handleResetZoom = () => {
+        const fitZoom = calculateFitZoom();
+        if (fitZoom) {
+            setZoom(fitZoom);
+            setPan({ x: 0, y: 0 });
+        } else {
+            setZoom(1);
+            setPan({ x: 0, y: 0 });
+        }
+    };
+
+    // Auto-fit on page change or load
+    useEffect(() => {
+        shouldFitRef.current = true;
+    }, [viewedPageId]);
+
+    useEffect(() => {
+        if (shouldFitRef.current) {
+            const fitZoom = calculateFitZoom();
+            if (fitZoom) {
+                setZoom(fitZoom);
+                setPan({ x: 0, y: 0 });
+                shouldFitRef.current = false;
+            }
+        }
+    }, [imageLoadedCount, viewedPageId]); // Retry when image loads or page changes
 
     // Helper to wrap text
     // Helper to wrap text
@@ -2162,10 +2220,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         if (!object) return null;
         // if (object.type === 'image-placeholder' && object.imageData) { return null; }
         const handles = getHandlesForObject(object);
-        // Increase hit threshold for easier touch (30px screen size converted to natural pixels if needed)
-        // Since point and handles are in Natural coords (for images), and we want 30px Screen threshold:
-        // Threshold = 30 / scale
-        const handleSize = 30 / scale;
+        // Increase hit threshold for easier touch (50px screen size for better accessibility)
+        // Threshold = 50 / scale
+        const handleSize = 50 / scale;
 
         for (const [name, pos] of Object.entries(handles)) {
             if (point.x >= pos.x - handleSize / 2 && point.x <= pos.x + handleSize / 2 && point.y >= pos.y - handleSize / 2 && point.y <= pos.y + handleSize / 2) { return name; }
@@ -2612,7 +2669,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             ctx.fillStyle = 'white'; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2; // Blue border
             Object.values(handles).forEach(pos => {
                 ctx.beginPath();
-                ctx.arc(pos.x, pos.y, 6, 0, 2 * Math.PI); // Circular handle
+                ctx.arc(pos.x, pos.y, 10, 0, 2 * Math.PI); // Circular handle (Radius 10)
                 ctx.fill();
                 ctx.stroke();
             });
@@ -2722,6 +2779,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
                     {/* Center Menu */}
                     <div className="flex items-center justify-center gap-2">
+                        <div className="flex items-center gap-1 border-r border-slate-600 pr-2 mr-1">
+                            <button onClick={handleUndo} disabled={!canUndo} className="p-1.5 hover:bg-slate-700 rounded-full disabled:opacity-30 transition-colors text-slate-300" title="上一步 (Ctrl+Z)">
+                                <UndoIcon className="w-5 h-5" />
+                            </button>
+                            <button onClick={handleRedo} disabled={!canRedo} className="p-1.5 hover:bg-slate-700 rounded-full disabled:opacity-30 transition-colors text-slate-300" title="下一步">
+                                <RedoIcon className="w-5 h-5" />
+                            </button>
+                        </div>
                         <div className="relative" ref={fileMenu.ref}>
                             <button onClick={fileMenu.toggle} className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-sm text-white transition-colors" aria-haspopup="true" aria-expanded={fileMenu.isOpen}>
                                 <FileIcon className="w-4 h-4" /> <span className="hidden md:inline">檔案</span>
@@ -2814,14 +2879,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     </div>
 
                     <div className="flex flex-col md:flex-row items-center gap-3 md:gap-4">
-                        <div className="flex md:flex-row flex-col items-center gap-1 border-b md:border-b-0 md:border-r border-slate-600 pb-2 md:pb-0 md:pr-3 w-full md:w-auto justify-center">
-                            <button onClick={handleUndo} disabled={!canUndo} className="p-2 hover:bg-slate-700 rounded-full disabled:opacity-30 transition-colors text-slate-300" title="上一步 (Ctrl+Z)">
-                                <UndoIcon className="w-5 h-5" />
-                            </button>
-                            <button onClick={handleRedo} disabled={!canRedo} className="p-2 hover:bg-slate-700 rounded-full disabled:opacity-30 transition-colors text-slate-300" title="下一步">
-                                <RedoIcon className="w-5 h-5" />
-                            </button>
-                        </div>
+
 
                         <div className="flex md:flex-row flex-col items-center gap-2">
                             <button onClick={() => setActiveTool('move')} title="移動" className={`p-2 rounded-full transition-all ${activeTool === 'move' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <HandIcon className="w-5 h-5" /> </button>
@@ -3075,7 +3133,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                         <PlusIcon className="w-5 h-5" />
                                     </button>
                                     <div className="w-full h-px bg-slate-700/50"></div>
-                                    <button onClick={handleResetZoom} className="p-2 hover:bg-slate-700 rounded-full transition-colors group" title="恢復 100%">
+                                    <button onClick={handleResetZoom} className="p-2 hover:bg-slate-700 rounded-full transition-colors group" title="恢復預設大小">
                                         <span className="text-[10px] font-mono font-bold group-hover:hidden">{Math.round(zoom * 100)}</span>
                                         <ResetZoomIcon className="w-5 h-5 hidden group-hover:block" />
                                     </button>
