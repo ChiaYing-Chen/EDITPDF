@@ -2178,7 +2178,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
                 touchState.current = {
                     mode: 'pinch',
-                    lastY: e.touches[0].clientY
+                    lastY: e.touches[0].clientY,
+                    startDist: dist,
+                    startZoom: zoom
                 };
             }
         };
