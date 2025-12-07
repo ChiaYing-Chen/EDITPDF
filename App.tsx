@@ -1774,20 +1774,43 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         fileMenu.close();
         if (isDirty) { if (window.confirm("您有未儲存的變更。確定要關閉嗎？")) { onClose(); } } else { onClose(); }
     };
-
     const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 5));
     const handleZoomOut = () => setZoom(z => Math.max(z - 0.1, 0.2));
 
-    const calculateFitZoom = () => {
+    const calculateFitZoom = (retry = 0): number | null => {
         const bg = backgroundRef.current;
         const container = document.getElementById('main-editor-view');
-        if (!bg || !container) return null;
+        if (!bg || !container) {
+            if (retry < 5) {
+                setTimeout(() => {
+                    const z = calculateFitZoom(retry + 1);
+                    if (z) {
+                        setZoom(z);
+                        setPan({ x: 0, y: 0 });
+                    }
+                }, 200);
+            }
+            return null;
+        }
 
         let w, h;
         if (viewedPage?.source.type === 'image') {
             const img = bg as HTMLImageElement;
             w = img.naturalWidth;
             h = img.naturalHeight;
+            if (!w || !h) {
+                // Image might not be loaded yet, retry
+                if (retry < 5) {
+                    setTimeout(() => {
+                        const z = calculateFitZoom(retry + 1);
+                        if (z) {
+                            setZoom(z);
+                            setPan({ x: 0, y: 0 });
+                        }
+                    }, 200);
+                }
+                return null;
+            }
         } else {
             w = bg.clientWidth;
             h = bg.clientHeight;
@@ -1808,6 +1831,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     };
 
     const handleResetZoom = () => {
+        // Reset operational states
+        pinchState.current = { isPinching: false, initialDist: 0, initialZoom: 1 };
+        setActionState({ type: 'idle' });
+
         const fitZoom = calculateFitZoom();
         if (fitZoom) {
             setZoom(fitZoom);
@@ -1825,16 +1852,19 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     useEffect(() => {
         if (shouldFitRef.current) {
-            const fitZoom = calculateFitZoom();
-            if (fitZoom) {
-                setZoom(fitZoom);
-                setPan({ x: 0, y: 0 });
-                shouldFitRef.current = false;
-            }
+            // Small delay to ensure layout is ready
+            const timer = setTimeout(() => {
+                const fitZoom = calculateFitZoom();
+                if (fitZoom) {
+                    setZoom(fitZoom);
+                    setPan({ x: 0, y: 0 });
+                    shouldFitRef.current = false;
+                }
+            }, 100);
+            return () => clearTimeout(timer);
         }
     }, [imageLoadedCount, viewedPageId]); // Retry when image loads or page changes
 
-    // Helper to wrap text
     // Helper to wrap text
     const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
         const paragraphs = text.split('\n');
@@ -3141,9 +3171,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                         onMouseMove={handleCanvasMouseMove}
                                         onMouseUp={handleCanvasMouseUp}
                                         onMouseLeave={handleCanvasMouseUp}
-                                        onTouchStart={handleCanvasMouseDown}
-                                        onTouchMove={handleCanvasMouseMove}
-                                        onTouchEnd={handleCanvasMouseUp}
                                     />
 
                                 </div>
