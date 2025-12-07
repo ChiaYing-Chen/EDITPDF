@@ -2539,7 +2539,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const handleCanvasTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
         if (pinchState.current.isPinching) {
-            if (e.touches.length === 0) {
+            // FIX: If less than 2 fingers are touching, we must stop pinching immediately.
+            if (e.touches.length < 2) {
                 pinchState.current.isPinching = false;
             }
         }
@@ -3151,7 +3152,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                                 scale={1.5}
                                                 rotation={viewedPage.rotation}
                                                 className="shadow-lg"
-                                                onLoadSuccess={() => setImageLoadedCount(c => c + 1)}
+                                                onLoadSuccess={() => {
+                                                    setImageLoadedCount(c => c + 1);
+                                                    // FIX: Directly call fit zoom when loaded
+                                                    setTimeout(() => {
+                                                        const z = calculateFitZoom();
+                                                        if (z) { setZoom(z); setPan({ x: 0, y: 0 }); }
+                                                    }, 50);
+                                                }}
                                             />
                                         </div>
                                     ) : (
@@ -3160,13 +3168,23 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                             src={pageUrlCache.get(viewedPage.id)}
                                             className="max-w-full max-h-full object-contain pointer-events-none"
                                             style={{ transform: `rotate(${viewedPage.rotation}deg)` }}
-                                            onLoad={() => setImageLoadedCount(c => c + 1)}
+                                            onLoad={() => {
+                                                setImageLoadedCount(c => c + 1);
+                                                // FIX: Directly call fit zoom when loaded
+                                                setTimeout(() => {
+                                                    const z = calculateFitZoom();
+                                                    if (z) { setZoom(z); setPan({ x: 0, y: 0 }); }
+                                                }, 50);
+                                            }}
                                         />
                                     )}
                                     <canvas
                                         ref={canvasRef}
                                         className={`absolute top-0 left-0 z-10 ${activeTool === 'select-text' ? 'pointer-events-none' : 'pointer-events-auto'}`}
-                                        style={viewedPage.source.type === 'image' ? { transform: `rotate(${viewedPage.rotation}deg)` } : {}}
+                                        style={{
+                                            ...(viewedPage.source.type === 'image' ? { transform: `rotate(${viewedPage.rotation}deg)` } : {}),
+                                            touchAction: 'none' // FIX: Critical for stopping browser gestures
+                                        }}
                                         onMouseDown={handleCanvasMouseDown}
                                         onMouseMove={handleCanvasMouseMove}
                                         onMouseUp={handleCanvasMouseUp}
