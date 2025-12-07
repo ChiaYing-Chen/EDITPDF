@@ -2064,6 +2064,56 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     const handleThumbnailWheel = (e: React.WheelEvent) => { if (thumbnailContainerRef.current) { thumbnailContainerRef.current.scrollLeft += e.deltaY; } };
 
+    const thumbnailTouchState = useRef<{ startX: number, startY: number, lastY: number }>({ startX: 0, startY: 0, lastY: 0 });
+
+    const handleThumbnailTouchStart = (e: React.TouchEvent) => {
+        if (e.touches.length === 1) {
+            thumbnailTouchState.current = {
+                startX: e.touches[0].clientX,
+                startY: e.touches[0].clientY,
+                lastY: e.touches[0].clientY
+            };
+        }
+    };
+
+    const handleThumbnailTouchMove = (e: React.TouchEvent) => {
+        if (e.touches.length === 1) {
+            thumbnailTouchState.current.lastY = e.touches[0].clientY;
+        }
+    };
+
+    const handleThumbnailTouchEnd = (e: React.TouchEvent) => {
+        if (e.changedTouches.length > 0) {
+            const diffY = thumbnailTouchState.current.lastY - thumbnailTouchState.current.startY;
+            const diffX = Math.abs(e.changedTouches[0].clientX - thumbnailTouchState.current.startX);
+            const threshold = 50;
+            const now = Date.now();
+
+            // Ensure distinct vertical swipe and debounce
+            if (now - lastScrollTime.current > 300 && Math.abs(diffY) > threshold && diffX < 30) {
+                if (diffY < -threshold) {
+                    // Swiped up -> Next Page
+                    const idx = state.pages.findIndex(p => p.id === viewedPageId);
+                    if (idx < state.pages.length - 1) {
+                        const nextId = state.pages[idx + 1].id;
+                        setViewedPageId(nextId);
+                        lastScrollTime.current = now;
+                        scrollToThumbnail(nextId);
+                    }
+                } else if (diffY > threshold) {
+                    // Swiped down -> Prev Page
+                    const idx = state.pages.findIndex(p => p.id === viewedPageId);
+                    if (idx > 0) {
+                        const prevId = state.pages[idx - 1].id;
+                        setViewedPageId(prevId);
+                        lastScrollTime.current = now;
+                        scrollToThumbnail(prevId);
+                    }
+                }
+            }
+        }
+    };
+
     const touchState = useRef<{
         mode: 'idle' | 'pinch' | 'swipe' | 'object-pinch';
         startDist: number;
@@ -2175,38 +2225,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
                 const scale = (dist / touchState.current.startDist) * touchState.current.startZoom;
                 setZoom(Math.max(0.2, Math.min(scale, 5)));
-            } else if (touchState.current.mode === 'swipe' && e.touches.length === 1) {
-                touchState.current.lastY = e.touches[0].clientY;
             }
         };
 
         const handleMainTouchEnd = (e: TouchEvent) => {
-            if (touchState.current.mode === 'swipe') {
-                const diffY = touchState.current.lastY - touchState.current.startY;
-                const threshold = 100; // px
-                const now = Date.now();
-                if (now - lastScrollTime.current > 300) { // Debounce
-                    if (diffY < -threshold) {
-                        // Swiped up -> Next page
-                        const idx = state.pages.findIndex(p => p.id === viewedPageId);
-                        if (idx < state.pages.length - 1) {
-                            const nextId = state.pages[idx + 1].id;
-                            setViewedPageId(nextId);
-                            lastScrollTime.current = now;
-                            scrollToThumbnail(nextId);
-                        }
-                    } else if (diffY > threshold) {
-                        // Swiped down -> Prev page
-                        const idx = state.pages.findIndex(p => p.id === viewedPageId);
-                        if (idx > 0) {
-                            const prevId = state.pages[idx - 1].id;
-                            setViewedPageId(prevId);
-                            lastScrollTime.current = now;
-                            scrollToThumbnail(prevId);
-                        }
-                    }
-                }
-            }
+
             touchState.current.mode = 'idle';
         };
 
@@ -3091,6 +3114,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                         ref={thumbnailContainerRef}
                         className={`md:hidden bg-slate-800 border-b border-slate-700 flex items-center px-4 gap-3 overflow-x-auto no-scrollbar flex-shrink-0 relative z-30 shadow-md transition-all duration-300 ${isSidebarOpen ? 'h-24 opacity-100' : 'h-0 opacity-0 border-b-0 py-0'}`}
                         onWheel={handleThumbnailWheel}
+                        onTouchStart={handleThumbnailTouchStart}
+                        onTouchMove={handleThumbnailTouchMove}
+                        onTouchEnd={handleThumbnailTouchEnd}
                     >
                         {state.pages.map((page, index) => (
                             <div key={page.id}
