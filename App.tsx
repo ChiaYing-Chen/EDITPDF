@@ -1631,8 +1631,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             updateState({ ...state, pages: newPages });
             setTargetObjectId(null);
         } else {
-            // Create new image object at center
-            addObjectToCenter('image-placeholder', { imageData: file });
+            // Create new image object at center with correct aspect ratio
+            const img = new Image();
+            const url = URL.createObjectURL(file);
+            img.onload = () => {
+                const aspect = img.naturalWidth / img.naturalHeight;
+                addObjectToCenter('image-placeholder', { imageData: file, aspect });
+                URL.revokeObjectURL(url);
+            };
+            img.src = url;
         }
         event.target.value = '';
     };
@@ -1930,7 +1937,23 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             const defaultHeight = data.fontSize * 2.5;
             newObject.ep = { x: sp.x + defaultWidth, y: sp.y + defaultHeight };
         } else if (type === 'image-placeholder' && data.imageData) {
-            newObject.ep = { x: sp.x + 200, y: sp.y + 200 };
+            // Default max size 200, but respect aspect ratio
+            const maxSize = 200;
+            let width = maxSize;
+            let height = maxSize;
+
+            if (data.aspect) {
+                if (data.aspect >= 1) {
+                    // Landscape or square
+                    width = maxSize;
+                    height = maxSize / data.aspect;
+                } else {
+                    // Portrait
+                    height = maxSize;
+                    width = maxSize * data.aspect;
+                }
+            }
+            newObject.ep = { x: sp.x + width, y: sp.y + height };
         }
 
         // Center the object around the calculated point
