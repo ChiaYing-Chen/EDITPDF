@@ -1039,8 +1039,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [activeStamp, setActiveStamp] = useState<StampConfig | null>(null);
 
     // Toolbar dragging state for mobile
-    // Toolbar dragging state for mobile
-    const [toolbarPos, setToolbarPos] = useState({ x: window.innerWidth - 80, y: window.innerHeight / 2 });
+    const [toolbarPos, setToolbarPos] = useState({ x: window.innerWidth - 80, y: window.innerHeight * 0.3 });
     const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
     const toolbarDragStart = useRef({ x: 0, y: 0 });
     const toolbarInitialPos = useRef({ x: 0, y: 0 });
