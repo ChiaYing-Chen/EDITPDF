@@ -1637,7 +1637,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const onObjectImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
         // Use selectedObjectId if targetObjectId is not set (fallback for immediate selection)
-        const targetId = targetObjectId || selectedObjectId;
+        const targetId = targetObjectId;
 
         if (!files || files.length === 0 || !viewedPageId) return;
         const file = files[0];
@@ -3417,7 +3417,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                     if (el) thumbnailRefs.current.set(page.id, el);
                                     else thumbnailRefs.current.delete(page.id);
                                 }}
-                            >
+                                draggable
+                                onDragStart={() => setDraggedId(page.id)}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={() => handleDrop(page.id)}
+                                onDragEnd={() => setDraggedId(null)}
+                                onClick={() => handleThumbnailClick(page.id)}>
                                 {page.source.type === 'pdf' ? (
                                     <div className="w-full h-full p-0.5 flex items-center justify-center overflow-hidden bg-white">
                                         <div className="pointer-events-none origin-center w-full h-full flex items-center justify-center">
