@@ -956,6 +956,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const objectImageInputRef = useRef<HTMLInputElement>(null);
 
     const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 768);
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
     const [history, setHistory] = useState<EditorPageState[]>([{ ...project, pdfAssets: project.pdfAssets || {}, pages: project.pages.map(p => ({ ...p, rotation: p.rotation ?? 0, objects: p.objects || [] })) }]);
     const [historyIndex, setHistoryIndex] = useState(0);
     const rawState = history[historyIndex];
@@ -2477,7 +2478,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 setSelectedObjectId(newObject.id);
                 // Keep tool active
                 // setActiveTool('move');
-                setActiveStamp(null);
+                // setActiveStamp(null); // Keep stamp active
             } else if (activeTool === 'text' && pendingTextConfig) {
                 const canvas = canvasRef.current;
                 const ctx = canvas?.getContext('2d');
@@ -2508,7 +2509,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 setSelectedObjectId(newObject.id);
                 // Keep tool active
                 // setActiveTool('move');
-                setPendingTextConfig(null);
+                // setPendingTextConfig(null); // Keep text config active
             } else if (activeTool === 'image-placeholder') {
                 const newObject: EditorObject = { id: `obj_${Date.now()}`, type: 'image-placeholder', sp: startPoint, ep: endPoint, color: '#FF69B4', strokeWidth: 2 };
                 newObjects.push(newObject); changesMade = true;
@@ -2688,6 +2689,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         setFontFamily(fontFamily);
         setShowTextModal(false);
     };
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
 
 
@@ -3113,6 +3120,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                             min={1}
                                             max={20}
                                             color={drawingColor}
+                                            vertical={isMobile}
                                         />
                                         <span className="text-xs text-slate-400 w-4 text-center">{Math.round(strokeWidth)}</span>
                                     </div>
@@ -3125,6 +3133,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                             min={10}
                                             max={100}
                                             color={drawingColor}
+                                            vertical={isMobile}
                                         />
                                         <span className="text-xs text-slate-400 w-6 text-center">{Math.round(fontSize)}</span>
                                     </div>
