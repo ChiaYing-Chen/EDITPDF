@@ -1002,6 +1002,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     // Drawing Style State
     const [drawingColor, setDrawingColor] = useState('#FF0000');
     const [textBackgroundColor, setTextBackgroundColor] = useState('#ffff00');
+    const [editingTextId, setEditingTextId] = useState<string | null>(null);
     const [strokeWidth, setStrokeWidth] = useState(2);
     const [fontSize, setFontSize] = useState(40);
     const [fontFamily, setFontFamily] = useState('sans-serif');
@@ -2554,10 +2555,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     }
                 }, 0);
             } else if (isDrag) {
-                const newObject: EditorObject = { id: `obj_${Date.now()}`, type: activeTool as DrawingTool, sp: startPoint, ep: endPoint, color: drawingColor, strokeWidth: strokeWidth, };
-                newObjects.push(newObject); changesMade = true;
-                // Auto-select the newly drawn object
-                setSelectedObjectId(newObject.id);
+                const drawingTools = ['line', 'arrow', 'rect', 'circle', 'pen', 'marker', 'highlighter'];
+                if (drawingTools.includes(activeTool as string)) {
+                    const newObject: EditorObject = { id: `obj_${Date.now()}`, type: activeTool as DrawingTool, sp: startPoint, ep: endPoint, color: drawingColor, strokeWidth: strokeWidth, };
+                    newObjects.push(newObject); changesMade = true;
+                    // Auto-select the newly drawn object
+                    setSelectedObjectId(newObject.id);
+                    setActiveTool('select-object' as any);
+                }
             } else {
                 // Click (not drag) with drawing tool -> Try to select object under cursor
                 const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
@@ -2807,7 +2812,28 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
 
     const handleTextConfirm = (text: string, color: string, fontSize: number, fontFamily: string, backgroundColor: string, backgroundOpacity: number) => {
-        addObjectToCenter('text', { text, color, fontSize, fontFamily, backgroundColor, backgroundOpacity });
+        if (editingTextId) {
+            // Update existing object
+            const newPages = state.pages.map(p => {
+                if (p.id === viewedPageId) {
+                    return {
+                        ...p,
+                        objects: p.objects.map(obj => {
+                            if (obj.id === editingTextId) {
+                                return { ...obj, text, color, fontSize, fontFamily, backgroundColor, backgroundOpacity };
+                            }
+                            return obj;
+                        })
+                    };
+                }
+                return p;
+            });
+            updateState({ ...state, pages: newPages });
+            setEditingTextId(null);
+        } else {
+            // Create New Object
+            addObjectToCenter('text', { text, color, fontSize, fontFamily, backgroundColor, backgroundOpacity });
+        }
         setDrawingColor(color);
         setFontSize(fontSize);
         setFontFamily(fontFamily);
@@ -2815,6 +2841,39 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         setShowTextModal(false);
         setActiveTool('select-object' as any);
     };
+
+    // Double Click Handler for Text Editing
+    useEffect(() => {
+        const handleDoubleClick = (e: MouseEvent) => {
+            if (!backgroundRef.current || !viewedPage) return;
+            // Calculate coordinates - reusing logic from getCanvasCoordinates roughly or relying on similar math
+            // Since this is a native event on window/canvas, let's use the helper if possible, but we need the ref.
+            // Let's attach listener to canvas like others.
+        };
+        // Actually, let's just use the existing canvasHandlersRef pattern or add a new specific effect for dblclick
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const onDblClick = (e: MouseEvent) => {
+            const pt = getCanvasCoordinates(e as any);
+            const hitObject = getObjectAtPoint(pt, viewedPage.objects);
+            if (hitObject && hitObject.type === 'text') {
+                setEditingTextId(hitObject.id);
+                setPendingTextConfig({
+                    text: hitObject.text || '',
+                    color: hitObject.color || '#000000',
+                    fontSize: hitObject.fontSize || 16,
+                    fontFamily: hitObject.fontFamily || 'sans-serif',
+                    backgroundColor: hitObject.backgroundColor || 'transparent',
+                    backgroundOpacity: hitObject.backgroundOpacity ?? 0.5
+                });
+                setShowTextModal(true);
+            }
+        };
+
+        canvas.addEventListener('dblclick', onDblClick);
+        return () => canvas.removeEventListener('dblclick', onDblClick);
+    }, [viewedPage, zoom, pan]);
 
     useEffect(() => {
         const handleResize = () => setIsMobile(window.innerWidth < 768);
