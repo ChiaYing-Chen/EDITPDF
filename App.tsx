@@ -1990,11 +1990,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             newObject.ep = { x: sp.x + width, y: sp.y + height };
         } else if (type === 'stamp') {
             const defaultWidth = Math.max(100, data.text.length * data.fontSize);
-            const defaultHeight = data.fontSize * 2.5;
+            const defaultHeight = data.fontSize * 6.25; // 2.5 * 2.5
             newObject.ep = { x: sp.x + defaultWidth, y: sp.y + defaultHeight };
         } else if (type === 'image-placeholder' && data.imageData) {
-            // Default max size 200, but respect aspect ratio
-            const maxSize = 200;
+            // Default max size increased to 500 (2.5x larger)
+            const maxSize = 500;
             let width = maxSize;
             let height = maxSize;
 
@@ -2604,51 +2604,30 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             }
 
             // 2. EDIT TOOLS: Object Interaction & Creation
+            const drawingTools = ['line', 'arrow', 'rect', 'circle', 'text', 'pen', 'marker', 'highlighter'];
+            const isDrawingTool = drawingTools.includes(activeTool as string);
 
-            // Mobile: Check for Resize Button Hit
-            if (isMobile && selectedObject) {
-                const { sp, ep } = selectedObject;
-                const minX = Math.min(sp.x, ep.x); const maxX = Math.max(sp.x, ep.x);
-                const minY = Math.min(sp.y, ep.y); const maxY = Math.max(sp.y, ep.y);
-
-                // Calculate Resize Button Position (Bottom Right, slightly offset)
-                const buttonSize = 32 / zoom; // Scale button hit area with zoom? No, fixed screen size usually better.
-                // Actually, getCanvasCoordinates gives us canvas units. 
-                // We drew the button at maxX + 20/zoom, maxY + 20/zoom in draw loop?
-                // Let's align with where we draw it.
-                // We need to know where we drew it.
-                // Let's assume we draw it at bottom-right corner.
-
-                // Check distance to bottom-right corner
-                const dx = startPoint.x - maxX;
-                const dy = startPoint.y - maxY;
-                const dist = Math.hypot(dx, dy);
-
-                // Hit area radius 25px in screen space -> 25 / zoom in canvas space
-                if (dist < 40 / zoom) {
-                    setShowResizeModal(true);
-                    return;
-                }
-            }
-
+            // Mobile: Check for Resize Button Hit (Moved to Toolbar, but keeping logic clean)
+            // if (isMobile && selectedObject && !isDrawingTool) { ... }
 
             // Mobile Long Press Logic for Moving
             if (isMobile) {
-                const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
-                if (objectToSelect) {
-                    // Start Timer
-                    longPressTimerRef.current = setTimeout(() => {
-                        isLongPressActiveRef.current = true;
-                        setSelectedObjectId(objectToSelect.id);
-                        setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
-                        // Vibrate if available
-                        if (navigator.vibrate) navigator.vibrate(50);
-                    }, 500); // 500ms long press
-
-                    // Do NOT set actionState yet. Just wait.
-                    // But we need to prevent default scrolling?
-                    // e.preventDefault(); // Maybe?
-                    return;
+                if (!isDrawingTool) {
+                    const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
+                    if (objectToSelect) {
+                        // Start Timer
+                        longPressTimerRef.current = setTimeout(() => {
+                            isLongPressActiveRef.current = true;
+                            setSelectedObjectId(objectToSelect.id);
+                            setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
+                            if (navigator.vibrate) navigator.vibrate(50);
+                        }, 500);
+                        // Do not return here, allow drawing logic to potentially run if timer not triggered? 
+                        // Actually if we start timer, we wait. 
+                        // If we return, we skip drawing.
+                        // We SHOULD return to prevent drawing while waiting for long press?
+                        return;
+                    }
                 }
             } else {
                 // DESKTOP / OLD LOGIC
@@ -2665,23 +2644,20 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 }
 
                 // Check for Object Hit (Moving)
-                const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
-                if (objectToSelect) {
-                    if (objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) { setTargetObjectId(objectToSelect.id); objectImageInputRef.current?.click(); return; }
-                    setSelectedObjectId(objectToSelect.id);
-                    setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
-                    return;
+                if (!isDrawingTool) {
+                    const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
+                    if (objectToSelect) {
+                        if (objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) { setTargetObjectId(objectToSelect.id); objectImageInputRef.current?.click(); return; }
+                        setSelectedObjectId(objectToSelect.id);
+                        setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
+                        return;
+                    }
                 }
             }
 
             // 3. DRAWING / CREATION (No Panning)
-            // On mobile, if long press timer is running, we wait.
-            // If user moves finger before timer, we cancel timer and treat as... scroll? or drawing?
-            // If it's a tap (start+end fast), it selects.
-
             if (activeTool !== 'text' && !longPressTimerRef.current) {
-                // Only draw if not potentially selecting/moving
-                e.preventDefault(); // Prevent scroll
+                e.preventDefault();
                 setActionState({ type: 'drawing', startPoint });
             }
         }
@@ -2973,31 +2949,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             const isLockedImage = currentSelectedObject.type === 'image-placeholder' && currentSelectedObject.imageData;
 
             if (isMobile) {
-                // Mobile: Draw selection box but NO handles. Draw Resize Button.
-                // Draw Resize Button at Bottom Right
-                const btnSize = 25 / zoom; // Visual radius
-                const bx = Math.max(sp.x, ep.x);
-                const by = Math.max(sp.y, ep.y);
-
-                ctx.beginPath();
-                ctx.arc(bx, by, btnSize, 0, 2 * Math.PI);
-                ctx.fillStyle = '#2563eb';
-                ctx.fill();
-                ctx.lineWidth = 2 / zoom;
-                ctx.strokeStyle = '#white';
-                ctx.stroke();
-
-                // Draw Icon (Just simplified lines)
-                ctx.beginPath();
-                ctx.strokeStyle = 'white';
-                ctx.moveTo(bx - btnSize * 0.5, by - btnSize * 0.5);
-                ctx.lineTo(bx + btnSize * 0.5, by + btnSize * 0.5);
-                ctx.moveTo(bx - btnSize * 0.2, by - btnSize * 0.5);
-                ctx.lineTo(bx + btnSize * 0.5, by + btnSize * 0.2);
-                ctx.moveTo(bx - btnSize * 0.5, by + btnSize * 0.2);
-                ctx.lineTo(bx - btnSize * 0.2, by + btnSize * 0.5);
-                ctx.stroke();
-
+                // Mobile: Draw selection box but NO handles.
+                // Resize Button is now in Floating Toolbar.
             } else {
                 // Desktop: Draw handles
                 const handles = getHandlesForObject(currentSelectedObject);
@@ -3265,6 +3218,19 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
                         <div className="flex md:flex-row flex-col items-center gap-2">
                             <button onClick={() => setActiveTool('move')} title="移動" className={`p-2 rounded-full transition-all ${activeTool === 'move' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <HandIcon className="w-5 h-5" /> </button>
+                            {/* Mobile Resize Button */}
+                            {isMobile && selectedObjectId && (
+                                <button
+                                    onClick={() => setShowResizeModal(true)}
+                                    title="調整大小"
+                                    className="p-2 rounded-full bg-blue-600 text-white shadow-lg shadow-blue-500/30 animate-pulse"
+                                >
+                                    {/* Using ExpandIcon or creating one if needs. I'll use a simple SVG here since I removed the canvas one */}
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                    </svg>
+                                </button>
+                            )}
                             <button onClick={() => setActiveTool('select-text' as any)} title="選取文字" className={`p-2 rounded-full transition-all ${activeTool === 'select-text' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <CursorTextIcon className="w-5 h-5" /> </button>
 
                             {/* Desktop Shape Tools */}
