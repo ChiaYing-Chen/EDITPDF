@@ -2030,7 +2030,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const newState = { ...state, pages: state.pages.map(p => p.id === viewedPageId ? { ...p, objects: newObjects } : p) };
         updateState(newState);
         setSelectedObjectId(newObject.id);
-        // setActiveTool('move'); // Keep current tool active
+        setActiveTool('select-object' as any);
     };
 
     const deleteSelectedObject = () => {
@@ -2058,7 +2058,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             fontSize: stamp.fontSize
         });
         setShowStampPicker(false);
-        setActiveTool('select-object' as any);
     };
 
     useEffect(() => {
@@ -2839,7 +2838,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         setFontFamily(fontFamily);
         setTextBackgroundColor(backgroundColor);
         setShowTextModal(false);
-        setActiveTool('select-object' as any);
     };
 
     // Double Click Handler for Text Editing
