@@ -45,7 +45,7 @@ const TriangleSizeSlider = ({ value, onChange, min, max, color = "white", vertic
     return (
         <div
             ref={containerRef}
-            className={`relative cursor-pointer touch-none flex items-center justify-center ${vertical ? 'w-10 h-32 flex-col' : 'h-10 w-32 flex-row'}`}
+            className={`relative cursor-pointer touch-none flex items-center justify-center ${vertical ? 'w-8 h-24 flex-col' : 'h-8 w-24 flex-row'}`}
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}

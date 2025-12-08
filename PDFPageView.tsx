@@ -4,13 +4,14 @@ import * as pdfjsLib from 'pdfjs-dist';
 interface PDFPageViewProps {
     pdfBlob: Blob;
     pageIndex: number; // 1-based index
-    scale: number;
+    scale?: number;
+    targetHeight?: number; // New prop for fixed height scaling
     rotation: number;
     className?: string;
     onLoadSuccess?: (width: number, height: number) => void;
 }
 
-const PDFPageView: React.FC<PDFPageViewProps> = ({ pdfBlob, pageIndex, scale, rotation, className, onLoadSuccess }) => {
+const PDFPageView: React.FC<PDFPageViewProps> = ({ pdfBlob, pageIndex, scale = 1, targetHeight, rotation, className, onLoadSuccess }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const textLayerRef = useRef<HTMLDivElement>(null);
     const renderTaskRef = useRef<any>(null); // Store render task for cancellation
@@ -45,7 +46,16 @@ const PDFPageView: React.FC<PDFPageViewProps> = ({ pdfBlob, pageIndex, scale, ro
 
                 // Handle High DPI
                 const pixelRatio = window.devicePixelRatio || 1;
-                const viewport = page.getViewport({ scale: scale, rotation: rotation });
+
+                // Calculate scale if targetHeight is provided
+                let finalScale = scale;
+                if (targetHeight) {
+                    // Get unscaled viewport first to determine ratio
+                    const unscaledViewport = page.getViewport({ scale: 1, rotation: rotation });
+                    finalScale = targetHeight / unscaledViewport.height;
+                }
+
+                const viewport = page.getViewport({ scale: finalScale, rotation: rotation });
 
                 const canvas = canvasRef.current;
                 if (!canvas) return;
@@ -139,7 +149,7 @@ const PDFPageView: React.FC<PDFPageViewProps> = ({ pdfBlob, pageIndex, scale, ro
                 renderTaskRef.current = null;
             }
         };
-    }, [pdfBlob, pageIndex, scale, rotation]);
+    }, [pdfBlob, pageIndex, scale, targetHeight, rotation]);
 
     return (
         <div className={`relative ${className || ''}`} style={{ width: 'fit-content', height: 'fit-content' }}>

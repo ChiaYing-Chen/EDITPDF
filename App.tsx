@@ -946,7 +946,7 @@ const convertImageToPdf = async (imageFile: File): Promise<Blob> => {
     const page = pdfDoc.addPage([width, height]);
     page.drawImage(image, { x: 0, y: 0, width, height });
     const pdfBytes = await pdfDoc.save();
-    return new Blob([pdfBytes], { type: 'application/pdf' });
+    return new Blob([pdfBytes as any], { type: 'application/pdf' });
 };
 
 interface EditorPageProps {
@@ -1047,7 +1047,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [activeStamp, setActiveStamp] = useState<StampConfig | null>(null);
 
     // Toolbar dragging state for mobile
-    const [toolbarPos, setToolbarPos] = useState({ x: window.innerWidth - 80, y: window.innerHeight * 0.3 });
+    const [toolbarPos, setToolbarPos] = useState({ x: window.innerWidth - 80, y: window.innerHeight * 0.15 });
     const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
     const toolbarDragStart = useRef({ x: 0, y: 0 });
     const toolbarInitialPos = useRef({ x: 0, y: 0 });
@@ -1075,7 +1075,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const isDrawingToolActive = activeTool && activeTool !== 'move';
 
     // Calculate Current Project Size from pages
-    const currentProjectSize = state?.pages?.reduce((acc, page) => acc + (page.source.type === 'image' ? page.source.data.size : 0), 0) + (state?.pdfAssets ? Object.values(state.pdfAssets).reduce((acc, blob) => acc + blob.size, 0) : 0);
+    const currentProjectSize = state?.pages?.reduce((acc, page) => acc + (page.source.type === 'image' ? (page.source.data as any).size : 0), 0) + (state?.pdfAssets ? Object.values(state.pdfAssets).reduce((acc, blob) => acc + blob.size, 0) : 0);
 
     // Estimate compressed size based on heuristic
     const getEstimatedSize = () => {
@@ -1585,7 +1585,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 }
             }
             const pdfBytes = await pdfDoc.save();
-            return new Blob([pdfBytes], { type: 'application/pdf' });
+            return new Blob([pdfBytes as any], { type: 'application/pdf' });
         } catch (error) {
             console.error("Failed to generate PDF blob:", error);
             return null;
@@ -2057,7 +2057,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             fontSize: stamp.fontSize
         });
         setShowStampPicker(false);
-        setActiveTool('move');
+        setActiveTool('select-object' as any);
     };
 
     useEffect(() => {
@@ -2491,7 +2491,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 changesMade = true;
                 setSelectedObjectId(newObject.id);
                 // Keep tool active
-                setActiveTool('move');
+                setActiveTool('select-object' as any);
                 // setActiveStamp(null); // Keep stamp active
             } else if (activeTool === 'text' && pendingTextConfig) {
                 const canvas = canvasRef.current;
@@ -2522,7 +2522,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 changesMade = true;
                 setSelectedObjectId(newObject.id);
                 // Keep tool active
-                setActiveTool('move');
+                setActiveTool('select-object' as any);
                 // setPendingTextConfig(null); // Keep text config active
             } else if (activeTool === 'image-placeholder') {
                 const newObject: EditorObject = { id: `obj_${Date.now()}`, type: 'image-placeholder', sp: startPoint, ep: endPoint, color: '#FF69B4', strokeWidth: 2 };
@@ -2530,7 +2530,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 setTargetObjectId(newObject.id);
                 setSelectedObjectId(newObject.id);
                 // Keep tool active
-                setActiveTool('move');
+                setActiveTool('select-object' as any);
                 setTimeout(() => {
                     const input = objectImageInputRef.current;
                     if (input) {
@@ -2813,7 +2813,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         setFontFamily(fontFamily);
         setTextBackgroundColor(backgroundColor);
         setShowTextModal(false);
-        setActiveTool('move');
+        setActiveTool('select-object' as any);
     };
 
     useEffect(() => {
@@ -3305,7 +3305,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                             </button>
                         </div >
 
-                        {isDrawingToolActive && (
+                        {isDrawingToolActive && activeTool !== 'select-text' && (
                             <div className="flex md:flex-row flex-col items-center gap-3 pt-2 md:pt-0 md:pl-3 border-t md:border-t-0 md:border-l border-slate-600 w-full md:w-auto">
                                 {activeTool !== 'image-placeholder' && activeTool !== 'stamp' && activeTool !== 'select-text' && (
                                     <input type="color" value={drawingColor} onChange={(e) => setDrawingColor(e.target.value)} className="w-8 h-8 rounded-full bg-transparent cursor-pointer border-none p-0 overflow-hidden ring-2 ring-slate-600" />
@@ -3417,19 +3417,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                     if (el) thumbnailRefs.current.set(page.id, el);
                                     else thumbnailRefs.current.delete(page.id);
                                 }}
-                                draggable
-                                onDragStart={() => setDraggedId(page.id)}
-                                onDragOver={(e) => e.preventDefault()}
-                                onDrop={() => handleDrop(page.id)}
-                                onDragEnd={() => setDraggedId(null)}
-                                className={`
-                                    relative h-20 group cursor-pointer rounded-md overflow-hidden flex-shrink-0 border-2 transition-all
-                                    ${page.rotation % 180 !== 0 ? 'aspect-[4/3]' : 'aspect-[3/4]'}
-                                    ${selectedPages.has(page.id) ? 'border-blue-500 ring-1 ring-blue-500' : 'border-transparent hover:border-slate-600'}
-                                    ${viewedPageId === page.id && !selectedPages.has(page.id) ? 'border-slate-500' : ''}
-                                    ${draggedId === page.id ? 'opacity-50' : ''}
-                                `}
-                                onClick={() => handleThumbnailClick(page.id)}
                             >
                                 {page.source.type === 'pdf' ? (
                                     <div className="w-full h-full p-0.5 flex items-center justify-center overflow-hidden bg-white">
@@ -3437,16 +3424,16 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                             <PDFPageView
                                                 pdfBlob={state.pdfAssets?.[page.source.pdfId]}
                                                 pageIndex={page.source.pageIndex}
-                                                scale={0.2} // Smaller scale for mobile thumbnail
+                                                targetHeight={80} // Fix height to 80px (container height)
                                                 rotation={page.rotation}
-                                                className="max-w-full max-h-full"
+                                                className="max-w-none" // Allow width to expand freely
                                             />
                                         </div>
                                     </div>
                                 ) : (
                                     <img
                                         src={pageUrlCache.get(page.id)}
-                                        className="w-full h-full object-contain bg-slate-900"
+                                        className="h-full w-auto object-contain bg-slate-900 mx-auto"
                                         style={{ transform: `rotate(${page.rotation}deg)` }}
                                         alt={`Page ${index + 1}`}
                                     />
