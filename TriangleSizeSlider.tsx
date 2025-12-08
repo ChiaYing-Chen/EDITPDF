@@ -55,7 +55,7 @@ const TriangleSizeSlider = ({ value, onChange, min, max, color = "white", vertic
                 className={`absolute bg-slate-500/90 border-2 border-slate-300 shadow-md ${vertical ? 'inset-y-0' : 'inset-x-0 bottom-0'}`}
                 style={{
                     clipPath: vertical
-                        ? 'polygon(50% 100%, 100% 0, 0 0)' // V shape inverted: Wide top, point bottom
+                        ? 'polygon(0 0, 100% 0, 0 100%)' // Right Triangle: Top-Left (0,0), Top-Right (100,0), Bottom-Left (0,100)
                         : 'polygon(0 100%, 100% 100%, 100% 0)',
                     // Adjust dimensions for visual
                     width: vertical ? '100%' : '100%',

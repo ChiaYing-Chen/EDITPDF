@@ -192,6 +192,11 @@ const CursorTextIcon: React.FC<{ className?: string }> = ({ className }) => (
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 16h10M12 8v8" />
     </svg>
 );
+const CursorArrowIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+    </svg>
+);
 
 
 // --- Dexie DB Service ---
@@ -996,7 +1001,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     // Drawing Style State
     const [drawingColor, setDrawingColor] = useState('#FF0000');
-    const [textBackgroundColor, setTextBackgroundColor] = useState('transparent');
+    const [textBackgroundColor, setTextBackgroundColor] = useState('#ffff00');
     const [strokeWidth, setStrokeWidth] = useState(2);
     const [fontSize, setFontSize] = useState(40);
     const [fontFamily, setFontFamily] = useState('sans-serif');
@@ -2604,6 +2609,23 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 return;
             }
 
+            // 1.5. SELECT OBJECT TOOL (Mobile Explicit Selection)
+            if (activeTool === 'select-object') {
+                const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
+                if (objectToSelect) {
+                    setSelectedObjectId(objectToSelect.id);
+                    setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
+                    return;
+                } else {
+                    setSelectedObjectId(null);
+                }
+                // Allow panning if missed object? Or just do nothing?
+                // Usually "Selection Tool" allows marquee or panning if missed.
+                // Let's allow panning if missed.
+                setActionState({ type: 'panning', panStartPoint: { x: touch.clientX, y: touch.clientY } });
+                return;
+            }
+
             // 2. EDIT TOOLS: Object Interaction & Creation
             const drawingTools = ['line', 'arrow', 'rect', 'circle', 'text', 'pen', 'marker', 'highlighter'];
             const isDrawingTool = drawingTools.includes(activeTool as string);
@@ -3225,12 +3247,16 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
                         <div className="flex md:flex-row flex-col items-center gap-2">
                             <button onClick={() => setActiveTool('move')} title="移動" className={`p-2 rounded-full transition-all ${activeTool === 'move' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <HandIcon className="w-5 h-5" /> </button>
+                            {isMobile && (
+                                <button onClick={() => setActiveTool('select-object' as any)} title="選取物件" className={`p-2 rounded-full transition-all ${activeTool === 'select-object' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <CursorArrowIcon className="w-5 h-5" /> </button>
+                            )}
+
                             {/* Mobile Resize Button */}
                             {isMobile && selectedObjectId && (
                                 <button
                                     onClick={() => setShowResizeModal(true)}
                                     title="調整大小"
-                                    className="p-2 rounded-full bg-blue-600 text-white shadow-lg shadow-blue-500/30 animate-pulse"
+                                    className="p-2 rounded-full bg-yellow-400 text-black shadow-lg shadow-yellow-500/30 animate-pulse"
                                 >
                                     {/* Using ExpandIcon or creating one if needs. I'll use a simple SVG here since I removed the canvas one */}
                                     <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3546,7 +3572,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 initialFontSize={pendingTextConfig?.fontSize || fontSize}
                 initialFontFamily={pendingTextConfig?.fontFamily || fontFamily}
                 initialBackgroundColor={pendingTextConfig?.backgroundColor || textBackgroundColor}
-                initialBackgroundOpacity={pendingTextConfig?.backgroundOpacity ?? 0}
+                initialBackgroundOpacity={pendingTextConfig?.backgroundOpacity ?? 0.5}
             />
         </div>
     );
