@@ -1,0 +1,21 @@
+// Minimal Lazy Wrapper
+const LazyThumbnail: React.FC<{ children: React.ReactNode; height?: number | string }> = ({ children, height = 200 }) => {
+    const [isVisible, setIsVisible] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(([entry]) => {
+            if (entry.isIntersecting) {
+                setIsVisible(true);
+                observer.disconnect(); // Keep it visible once loaded
+            }
+        }, { rootMargin: '300px' }); // Preload well in advance
+
+        if (ref.current) observer.observe(ref.current);
+        return () => observer.disconnect();
+    }, []);
+
+    return <div ref={ref} style={{ minHeight: height, width: '100%' }}>{isVisible ? children : null}</div>;
+};
+
+// --- Helper Functions ---

@@ -11,6 +11,26 @@ import TriangleSizeSlider from './TriangleSizeSlider';
 // Configure the PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://esm.sh/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
 
+// Minimal Lazy Wrapper
+const LazyThumbnail: React.FC<{ children: React.ReactNode; height?: number | string; className?: string }> = ({ children, height = 200, className }) => {
+    const [isVisible, setIsVisible] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(([entry]) => {
+            if (entry.isIntersecting) {
+                setIsVisible(true);
+                observer.disconnect();
+            }
+        }, { rootMargin: '300px' }); // Preload 300px before viewport
+
+        if (ref.current) observer.observe(ref.current);
+        return () => observer.disconnect();
+    }, []);
+
+    return <div ref={ref} style={{ minHeight: height }} className={className}>{isVisible ? children : null}</div>;
+};
+
 // --- Helper Functions ---
 const formatBytes = (bytes: number = 0, decimals = 2) => {
     if (!+bytes) return '0 Bytes';
@@ -1076,7 +1096,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const isDrawingToolActive = activeTool && activeTool !== 'move';
 
     // Calculate Current Project Size from pages
-    const currentProjectSize = state?.pages?.reduce((acc, page) => acc + (page.source.type === 'image' ? (page.source.data as any).size : 0), 0) + (state?.pdfAssets ? Object.values(state.pdfAssets).reduce((acc, blob) => acc + blob.size, 0) : 0);
+    const currentProjectSize = state?.pages?.reduce((acc, page) => acc + (page.source.type === 'image' ? ((page.source as any).data?.size || 0) : 0), 0) + (state?.pdfAssets ? Object.values(state.pdfAssets).reduce((acc, blob) => acc + blob.size, 0) : 0);
 
     // Estimate compressed size based on heuristic
     const getEstimatedSize = () => {
@@ -3422,26 +3442,28 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                     ${draggedId === page.id ? 'opacity-40 scale-95' : ''}
                                 `}
                             >
-                                {page.source.type === 'pdf' ? (
-                                    <div className="w-full h-full p-1 flex items-center justify-center overflow-hidden bg-white">
-                                        <div className="pointer-events-none origin-center w-full h-full flex items-center justify-center">
-                                            <PDFPageView
-                                                pdfBlob={state.pdfAssets?.[page.source.pdfId]}
-                                                pageIndex={page.source.pageIndex}
-                                                scale={0.3} // Small scale for thumbnail
-                                                rotation={page.rotation}
-                                                className="max-w-full max-h-full"
-                                            />
+                                <LazyThumbnail height={200} className="w-full h-full">
+                                    {page.source.type === 'pdf' ? (
+                                        <div className="w-full h-full p-1 flex items-center justify-center overflow-hidden bg-white">
+                                            <div className="pointer-events-none origin-center w-full h-full flex items-center justify-center">
+                                                <PDFPageView
+                                                    pdfBlob={state.pdfAssets?.[page.source.pdfId]}
+                                                    pageIndex={page.source.pageIndex}
+                                                    scale={0.3} // Small scale for thumbnail
+                                                    rotation={page.rotation}
+                                                    className="max-w-full max-h-full"
+                                                />
+                                            </div>
                                         </div>
-                                    </div>
-                                ) : (
-                                    <img
-                                        src={pageUrlCache.get(page.id)}
-                                        className="w-full h-full object-contain p-1"
-                                        style={{ transform: `rotate(${page.rotation}deg)` }}
-                                        alt={`Page ${index + 1}`}
-                                    />
-                                )}
+                                    ) : (
+                                        <img
+                                            src={pageUrlCache.get(page.id)}
+                                            className="w-full h-full object-contain p-1"
+                                            style={{ transform: `rotate(${page.rotation}deg)` }}
+                                            alt={`Page ${index + 1}`}
+                                        />
+                                    )}
+                                </LazyThumbnail>
                                 <div className="absolute bottom-1 right-1 bg-slate-900/80 text-white text-[10px] font-mono px-2 py-0.5 rounded-md shadow-sm">
                                     {index + 1}
                                 </div>
@@ -3485,26 +3507,28 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                     ${draggedId === page.id ? 'opacity-50' : ''}
                                 `}
                             >
-                                {page.source.type === 'pdf' ? (
-                                    <div className="w-full h-full p-0.5 flex items-center justify-center overflow-hidden bg-white">
-                                        <div className="pointer-events-none origin-center w-full h-full flex items-center justify-center">
-                                            <PDFPageView
-                                                pdfBlob={state.pdfAssets?.[page.source.pdfId]}
-                                                pageIndex={page.source.pageIndex}
-                                                targetHeight={80} // Fix height to 80px (container height)
-                                                rotation={page.rotation}
-                                                className="max-w-none" // Allow width to expand freely
-                                            />
+                                <LazyThumbnail height="100%" className="w-full h-full">
+                                    {page.source.type === 'pdf' ? (
+                                        <div className="w-full h-full p-0.5 flex items-center justify-center overflow-hidden bg-white">
+                                            <div className="pointer-events-none origin-center w-full h-full flex items-center justify-center">
+                                                <PDFPageView
+                                                    pdfBlob={state.pdfAssets?.[page.source.pdfId]}
+                                                    pageIndex={page.source.pageIndex}
+                                                    targetHeight={80} // Fix height to 80px (container height)
+                                                    rotation={page.rotation}
+                                                    className="max-w-none" // Allow width to expand freely
+                                                />
+                                            </div>
                                         </div>
-                                    </div>
-                                ) : (
-                                    <img
-                                        src={pageUrlCache.get(page.id)}
-                                        className="h-full w-auto object-contain bg-slate-900 mx-auto"
-                                        style={{ transform: `rotate(${page.rotation}deg)` }}
-                                        alt={`Page ${index + 1}`}
-                                    />
-                                )}
+                                    ) : (
+                                        <img
+                                            src={pageUrlCache.get(page.id)}
+                                            className="h-full w-auto object-contain bg-slate-900 mx-auto"
+                                            style={{ transform: `rotate(${page.rotation}deg)` }}
+                                            alt={`Page ${index + 1}`}
+                                        />
+                                    )}
+                                </LazyThumbnail>
                                 <div className="absolute bottom-0 right-0 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-tl">
                                     {index + 1}
                                 </div>
