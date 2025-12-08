@@ -27,6 +27,7 @@ export interface EditorObject {
   text?: string;
   color?: string;
   backgroundColor?: string;
+  backgroundOpacity?: number;
   strokeWidth?: number;
   fontFamily?: string;
   fontSize?: number;

@@ -45,27 +45,27 @@ const TriangleSizeSlider = ({ value, onChange, min, max, color = "white", vertic
     return (
         <div
             ref={containerRef}
-            className={`relative cursor-pointer touch-none flex items-center justify-center ${vertical ? 'w-8 h-32 flex-col' : 'h-8 w-32 flex-row'}`}
+            className={`relative cursor-pointer touch-none flex items-center justify-center ${vertical ? 'w-10 h-32 flex-col' : 'h-10 w-32 flex-row'}`}
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
         >
             {/* Triangle Shape Background */}
             <div
-                className={`absolute bg-slate-700/50 ${vertical ? 'inset-y-0' : 'inset-x-0 bottom-0'}`}
+                className={`absolute bg-slate-500/90 border-2 border-slate-300 shadow-md ${vertical ? 'inset-y-0' : 'inset-x-0 bottom-0'}`}
                 style={{
                     clipPath: vertical
                         ? 'polygon(50% 100%, 100% 0, 0 0)' // V shape inverted: Wide top, point bottom
                         : 'polygon(0 100%, 100% 100%, 100% 0)',
                     // Adjust dimensions for visual
                     width: vertical ? '100%' : '100%',
-                    height: vertical ? '100%' : '16px'
+                    height: vertical ? '100%' : '20px'
                 }}
             ></div>
 
             {/* Knob/Indicator */}
             <div
-                className="absolute w-4 h-4 bg-white rounded-full shadow-md border border-slate-300 transform"
+                className="absolute w-5 h-5 bg-white rounded-full shadow-lg border-2 border-blue-500 transform"
                 style={{
                     left: vertical ? '50%' : `${((value - min) / (max - min)) * 100}%`,
                     top: vertical ? `${(1 - (value - min) / (max - min)) * 100}%` : '50%',

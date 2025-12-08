@@ -999,12 +999,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const [drawingColor, setDrawingColor] = useState('#FF0000');
     const [textBackgroundColor, setTextBackgroundColor] = useState('transparent');
     const [strokeWidth, setStrokeWidth] = useState(2);
-    const [fontSize, setFontSize] = useState(16);
+    const [fontSize, setFontSize] = useState(40);
     const [fontFamily, setFontFamily] = useState('sans-serif');
 
     // Text Tool Refactor State
     const [showTextModal, setShowTextModal] = useState(false);
-    const [pendingTextConfig, setPendingTextConfig] = useState<{ text: string; color: string; fontSize: number; fontFamily: string } | null>(null);
+    const [pendingTextConfig, setPendingTextConfig] = useState<{ text: string; color: string; fontSize: number; fontFamily: string; backgroundColor?: string; backgroundOpacity?: number } | null>(null);
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const backgroundRef = useRef<HTMLElement>(null);
@@ -1458,6 +1458,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     width: maxWidth,
                     height: totalHeight,
                     color: bgRgb,
+                    opacity: obj.backgroundOpacity ?? 1,
                 });
             }
 
@@ -2392,35 +2393,43 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             }
         }
 
-        // Check for handle first (Resizing takes priority over drawing)
+        // STRICT MODE SEPARATION
+
+        // 1. MOVE TOOL: Panning/Zooming Only (No Object Interaction)
+        if (activeTool === 'move') {
+            setSelectedObjectId(null);
+            const clientPt = getClientCoordinates(e);
+            setActionState({ type: 'panning', panStartPoint: clientPt });
+            return;
+        }
+
+        // 2. EDIT TOOLS: Object Interaction (Resize/Move) & Creation (No Panning)
+
+        // Check for handle first (Resizing takes priority)
         const handle = getHandleAtPoint(startPoint, selectedObject, scale * zoom);
         if (handle) {
             setActionState({ type: 'resizing', startPoint, handle, initialObject: selectedObject! });
             return;
         }
 
-        if (isDrawingToolActive) {
-            if (activeTool === 'text') {
-                // New logic: handled in MouseUp for click-to-place
-                setActionState({ type: 'drawing', startPoint });
-                // Don't deselect immediately to allow handle interaction or re-selection on click
-                // setSelectedObjectId(null); 
+        // Check for Object Hit (Moving/Selecting takes priority over Drawing)
+        const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
+        if (objectToSelect) {
+            if (objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) {
+                setTargetObjectId(objectToSelect.id);
+                objectImageInputRef.current?.click();
+                return;
             }
-            else {
-                setActionState({ type: 'drawing', startPoint });
-                // Don't deselect immediately
-                // setSelectedObjectId(null); 
-            }
+            setSelectedObjectId(objectToSelect.id);
+            setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
+            return;
+        }
+
+        // 3. CREATION / DRAWING (If no object hit)
+        if (activeTool === 'text') {
+            setActionState({ type: 'drawing', startPoint });
         } else {
-            // Move mode logic
-            const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
-            if (objectToSelect && objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) { setTargetObjectId(objectToSelect.id); objectImageInputRef.current?.click(); return; }
-            if (objectToSelect) { setSelectedObjectId(objectToSelect.id); setActionState({ type: 'moving', startPoint, initialObject: objectToSelect }); }
-            else {
-                setSelectedObjectId(null);
-                const clientPt = getClientCoordinates(e);
-                setActionState({ type: 'panning', panStartPoint: clientPt });
-            }
+            setActionState({ type: 'drawing', startPoint });
         }
     };
 
@@ -2581,8 +2590,18 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
             const touch = e.touches[0]; const startPoint = getCanvasCoordinates(e);
 
-            // Check for handle first (Resizing takes priority)
-            // Calculate scale for handle hit test
+            // STRICT MODE SEPARATION
+
+            // 1. MOVE TOOL: Panning Only
+            if (activeTool === 'move') {
+                setSelectedObjectId(null);
+                setActionState({ type: 'panning', panStartPoint: { x: touch.clientX, y: touch.clientY } });
+                return;
+            }
+
+            // 2. EDIT TOOLS: Object Interaction & Creation
+
+            // Check for handle first (Resizing)
             let scale = 1;
             if (viewedPage?.source.type === 'image' && backgroundRef.current) {
                 const img = backgroundRef.current as HTMLImageElement;
@@ -2594,19 +2613,19 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 return;
             }
 
-            if (isDrawingToolActive) {
-                e.preventDefault();
-                if (activeTool !== 'text') {
-                    setActionState({ type: 'drawing', startPoint });
-                    // Don't deselect
-                    // setSelectedObjectId(null); 
-                }
+            // Check for Object Hit (Moving)
+            const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
+            if (objectToSelect) {
+                if (objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) { setTargetObjectId(objectToSelect.id); objectImageInputRef.current?.click(); return; }
+                setSelectedObjectId(objectToSelect.id);
+                setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
+                return;
             }
-            else {
-                const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
-                if (objectToSelect && objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) { setTargetObjectId(objectToSelect.id); objectImageInputRef.current?.click(); return; }
-                if (objectToSelect) { setSelectedObjectId(objectToSelect.id); setActionState({ type: 'moving', startPoint, initialObject: objectToSelect }); }
-                else { setSelectedObjectId(null); setActionState({ type: 'panning', panStartPoint: { x: touch.clientX, y: touch.clientY } }); }
+
+            // 3. DRAWING / CREATION (No Panning)
+            if (activeTool !== 'text') {
+                e.preventDefault(); // Prevent scroll
+                setActionState({ type: 'drawing', startPoint });
             }
         }
     };
@@ -2682,11 +2701,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
 
 
-    const handleTextConfirm = (text: string, color: string, fontSize: number, fontFamily: string) => {
-        addObjectToCenter('text', { text, color, fontSize, fontFamily });
+    const handleTextConfirm = (text: string, color: string, fontSize: number, fontFamily: string, backgroundColor: string, backgroundOpacity: number) => {
+        addObjectToCenter('text', { text, color, fontSize, fontFamily, backgroundColor, backgroundOpacity });
         setDrawingColor(color);
         setFontSize(fontSize);
         setFontFamily(fontFamily);
+        setTextBackgroundColor(backgroundColor);
         setShowTextModal(false);
     };
 
@@ -2767,12 +2787,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                     const lineHeight = (obj.fontSize || 16) * 1.2 * scaleY;
 
                     if (obj.backgroundColor && obj.backgroundColor !== 'transparent') {
+                        ctx.save();
+                        ctx.globalAlpha = obj.backgroundOpacity ?? 1;
                         ctx.fillStyle = obj.backgroundColor;
                         lines.forEach((line, index) => {
                             const metrics = ctx.measureText(line);
                             const textWidth = metrics.width;
                             ctx.fillRect(sp.x, sp.y + (index * lineHeight), textWidth, lineHeight);
                         });
+                        ctx.restore();
                     }
                     ctx.fillStyle = obj.color || 'red';
                     lines.forEach((line, index) => {
@@ -3109,10 +3132,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
                         {isDrawingToolActive && (
                             <div className="flex md:flex-row flex-col items-center gap-3 pt-2 md:pt-0 md:pl-3 border-t md:border-t-0 md:border-l border-slate-600 w-full md:w-auto">
-                                {activeTool !== 'image-placeholder' && activeTool !== 'stamp' && (
+                                {activeTool !== 'image-placeholder' && activeTool !== 'stamp' && activeTool !== 'select-text' && (
                                     <input type="color" value={drawingColor} onChange={(e) => setDrawingColor(e.target.value)} className="w-8 h-8 rounded-full bg-transparent cursor-pointer border-none p-0 overflow-hidden ring-2 ring-slate-600" />
                                 )}
-                                {activeTool !== 'text' && activeTool !== 'stamp' && (
+                                {activeTool !== 'text' && activeTool !== 'stamp' && activeTool !== 'select-text' && (
                                     <div className="flex items-center gap-2 pl-2">
                                         <TriangleSizeSlider
                                             value={strokeWidth}
@@ -3122,7 +3145,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                             color={drawingColor}
                                             vertical={isMobile}
                                         />
-                                        <span className="text-xs text-slate-400 w-4 text-center">{Math.round(strokeWidth)}</span>
                                     </div>
                                 )}
                                 {activeTool === 'text' && (
@@ -3135,7 +3157,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                             color={drawingColor}
                                             vertical={isMobile}
                                         />
-                                        <span className="text-xs text-slate-400 w-6 text-center">{Math.round(fontSize)}</span>
                                     </div>
                                 )}
                             </div>
@@ -3371,9 +3392,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 onClose={() => setShowTextModal(false)}
                 onConfirm={handleTextConfirm}
                 initialText={pendingTextConfig?.text || ''}
-                initialColor={drawingColor}
-                initialFontSize={fontSize}
-                initialFontFamily={fontFamily}
+                initialColor={pendingTextConfig?.color || drawingColor}
+                initialFontSize={pendingTextConfig?.fontSize || fontSize}
+                initialFontFamily={pendingTextConfig?.fontFamily || fontFamily}
+                initialBackgroundColor={pendingTextConfig?.backgroundColor || textBackgroundColor}
+                initialBackgroundOpacity={pendingTextConfig?.backgroundOpacity ?? 0}
             />
         </div>
     );
