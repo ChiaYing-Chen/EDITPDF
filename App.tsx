@@ -2023,7 +2023,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const newState = { ...state, pages: state.pages.map(p => p.id === viewedPageId ? { ...p, objects: newObjects } : p) };
         updateState(newState);
         setSelectedObjectId(newObject.id);
-        setActiveTool('move');
+        // setActiveTool('move'); // Keep current tool active
     };
 
     const deleteSelectedObject = () => {
@@ -2391,25 +2391,34 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             }
         }
 
+        // Check for handle first (Resizing takes priority over drawing)
+        const handle = getHandleAtPoint(startPoint, selectedObject, scale * zoom);
+        if (handle) {
+            setActionState({ type: 'resizing', startPoint, handle, initialObject: selectedObject! });
+            return;
+        }
+
         if (isDrawingToolActive) {
             if (activeTool === 'text') {
                 // New logic: handled in MouseUp for click-to-place
                 setActionState({ type: 'drawing', startPoint });
-                setSelectedObjectId(null);
+                // Don't deselect immediately to allow handle interaction or re-selection on click
+                // setSelectedObjectId(null); 
             }
-            else { setActionState({ type: 'drawing', startPoint }); setSelectedObjectId(null); }
-        } else {
-            const handle = getHandleAtPoint(startPoint, selectedObject, scale);
-            if (handle) { setActionState({ type: 'resizing', startPoint, handle, initialObject: selectedObject! }); }
             else {
-                const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
-                if (objectToSelect && objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) { setTargetObjectId(objectToSelect.id); objectImageInputRef.current?.click(); return; }
-                if (objectToSelect) { setSelectedObjectId(objectToSelect.id); setActionState({ type: 'moving', startPoint, initialObject: objectToSelect }); }
-                else {
-                    setSelectedObjectId(null);
-                    const clientPt = getClientCoordinates(e);
-                    setActionState({ type: 'panning', panStartPoint: clientPt });
-                }
+                setActionState({ type: 'drawing', startPoint });
+                // Don't deselect immediately
+                // setSelectedObjectId(null); 
+            }
+        } else {
+            // Move mode logic
+            const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
+            if (objectToSelect && objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) { setTargetObjectId(objectToSelect.id); objectImageInputRef.current?.click(); return; }
+            if (objectToSelect) { setSelectedObjectId(objectToSelect.id); setActionState({ type: 'moving', startPoint, initialObject: objectToSelect }); }
+            else {
+                setSelectedObjectId(null);
+                const clientPt = getClientCoordinates(e);
+                setActionState({ type: 'panning', panStartPoint: clientPt });
             }
         }
     };
@@ -2466,7 +2475,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 newObjects.push(newObject);
                 changesMade = true;
                 setSelectedObjectId(newObject.id);
-                setActiveTool('move');
+                // Keep tool active
+                // setActiveTool('move');
                 setActiveStamp(null);
             } else if (activeTool === 'text' && pendingTextConfig) {
                 const canvas = canvasRef.current;
@@ -2496,14 +2506,16 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 newObjects.push(newObject);
                 changesMade = true;
                 setSelectedObjectId(newObject.id);
-                setActiveTool('move');
+                // Keep tool active
+                // setActiveTool('move');
                 setPendingTextConfig(null);
             } else if (activeTool === 'image-placeholder') {
                 const newObject: EditorObject = { id: `obj_${Date.now()}`, type: 'image-placeholder', sp: startPoint, ep: endPoint, color: '#FF69B4', strokeWidth: 2 };
                 newObjects.push(newObject); changesMade = true;
                 setTargetObjectId(newObject.id);
                 setSelectedObjectId(newObject.id);
-                setActiveTool('move');
+                // Keep tool active
+                // setActiveTool('move');
                 setTimeout(() => {
                     const input = objectImageInputRef.current;
                     if (input) {
@@ -2529,6 +2541,20 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             } else if (isDrag) {
                 const newObject: EditorObject = { id: `obj_${Date.now()}`, type: activeTool as DrawingTool, sp: startPoint, ep: endPoint, color: drawingColor, strokeWidth: strokeWidth, };
                 newObjects.push(newObject); changesMade = true;
+                // Auto-select the newly drawn object
+                setSelectedObjectId(newObject.id);
+            } else {
+                // Click (not drag) with drawing tool -> Try to select object under cursor
+                const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
+                if (objectToSelect) {
+                    setSelectedObjectId(objectToSelect.id);
+                    // Force update to ensure selection UI appears
+                    // changesMade = true; // Not a content change, but state change handled by setSelectedObjectId
+                    // But we might need to trigger re-render if updatedState doesn't catch it separate from this function
+                    // setSelectedObjectId triggers re-render.
+                } else {
+                    setSelectedObjectId(null);
+                }
             }
         } else if ((type === 'moving' || type === 'resizing') && previewObject) { newObjects = newObjects.map(obj => obj.id === previewObject.id ? previewObject : obj); changesMade = true; }
         if (changesMade) { const newState = { ...state, pages: state.pages.map(p => p.id === viewedPageId ? { ...p, objects: newObjects } : p) }; updateState(newState, { keepSelection: true }); }
@@ -2553,7 +2579,28 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             }
 
             const touch = e.touches[0]; const startPoint = getCanvasCoordinates(e);
-            if (isDrawingToolActive) { e.preventDefault(); if (activeTool !== 'text') { setActionState({ type: 'drawing', startPoint }); setSelectedObjectId(null); } }
+
+            // Check for handle first (Resizing takes priority)
+            // Calculate scale for handle hit test
+            let scale = 1;
+            if (viewedPage?.source.type === 'image' && backgroundRef.current) {
+                const img = backgroundRef.current as HTMLImageElement;
+                if (img.naturalWidth) { scale = img.clientWidth / img.naturalWidth; }
+            }
+            const handle = getHandleAtPoint(startPoint, selectedObject, scale * zoom);
+            if (handle) {
+                setActionState({ type: 'resizing', startPoint, handle, initialObject: selectedObject! });
+                return;
+            }
+
+            if (isDrawingToolActive) {
+                e.preventDefault();
+                if (activeTool !== 'text') {
+                    setActionState({ type: 'drawing', startPoint });
+                    // Don't deselect
+                    // setSelectedObjectId(null); 
+                }
+            }
             else {
                 const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
                 if (objectToSelect && objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) { setTargetObjectId(objectToSelect.id); objectImageInputRef.current?.click(); return; }
