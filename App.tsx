@@ -979,6 +979,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const objectImageInputRef = useRef<HTMLInputElement>(null);
 
+    // Page Jump State
+    const [isEditingPage, setIsEditingPage] = useState(false);
+    const [pageInputValue, setPageInputValue] = useState('');
+
     const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 768);
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
     const [history, setHistory] = useState<EditorPageState[]>([{ ...project, pdfAssets: project.pdfAssets || {}, pages: project.pages.map(p => ({ ...p, rotation: p.rotation ?? 0, objects: p.objects || [] })) }]);
@@ -1152,6 +1156,21 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         return () => window.removeEventListener('storage', handleStorage);
     }, [showStampSettings]); // Refresh when settings closed
 
+    // Scroll Sidebar to Active Page
+    useEffect(() => {
+        if (!viewedPageId) return;
+        // Desktop
+        const desktopEl = desktopThumbnailRefs.current.get(viewedPageId);
+        if (desktopEl) {
+            desktopEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        // Mobile
+        const mobileEl = thumbnailRefs.current.get(viewedPageId);
+        if (mobileEl) {
+            mobileEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+    }, [viewedPageId]);
+
     // Optimized URL Cache Logic
     useEffect(() => {
         const currentMap = activeUrlMap.current; // Map<string, { url: string, blob: Blob }>
@@ -1297,6 +1316,29 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     }, [viewedPage, zoom, imageLoadedCount]);
 
     // ... (State management, undo/redo, compression logic unchanged)
+    // --- Scroll Navigation Logic ---
+    const handleMainWheel = (e: React.WheelEvent) => {
+        if (e.ctrlKey) return; // Let zoom handle ctrl+scroll
+        // Only handle vertical scroll significantly
+        if (Math.abs(e.deltaY) < 30) return;
+
+        if (Date.now() - lastScrollTime.current < 150) return; // Throttle 200ms
+
+        if (e.deltaY > 0) {
+            // Scroll Down -> Next Page
+            if (viewedPageIndex < state.pages.length - 1) {
+                setViewedPageId(state.pages[viewedPageIndex + 1].id);
+                lastScrollTime.current = Date.now();
+            }
+        } else {
+            // Scroll Up -> Prev Page
+            if (viewedPageIndex > 0) {
+                setViewedPageId(state.pages[viewedPageIndex - 1].id);
+                lastScrollTime.current = Date.now();
+            }
+        }
+    };
+
     const handleCompress = async () => {
         // ... (existing compress logic)
         setIsLoading(true);
@@ -1822,9 +1864,32 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         generatePdf(pagesToExport, `${projectName.replace(/\.pdf$/i, '') || 'document'}_selection.pdf`);
     };
 
-    const handleClose = () => {
+    const handleManualSave = async () => {
+        setIsLoading(true);
+        try {
+            await onSave(state, projectName);
+            setIsDirty(false);
+            setShowSaveSuccess(true);
+            setTimeout(() => setShowSaveSuccess(false), 2000);
+        } catch (error) {
+            console.error("Manual save failed:", error);
+            alert("儲存失敗");
+        } finally {
+            setIsLoading(false);
+            fileMenu.close();
+        }
+    };
+
+    const handleCloseProject = () => {
         fileMenu.close();
-        if (isDirty) { if (window.confirm("您有未儲存的變更。確定要關閉嗎？")) { onClose(); } } else { onClose(); }
+        if (isDirty) {
+            // Check if explicitly saved recently or not
+            if (window.confirm("專案有未儲存的變更，確定要關閉嗎？\n(建議先使用「檔案」>「儲存專案」)")) {
+                onClose();
+            }
+        } else {
+            onClose();
+        }
     };
     const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 5));
     const handleZoomOut = () => setZoom(z => Math.max(z - 0.1, 0.2));
@@ -3233,7 +3298,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 <FileIcon className="w-4 h-4" /> <span className="hidden md:inline">檔案</span>
                             </button>
                             {fileMenu.isOpen && (
-                                <div className="absolute left-0 mt-2 w-56 bg-slate-700 rounded-md shadow-lg py-1 z-50 border border-slate-600">
+                                <div className="absolute left-0 mt-2 w-56 bg-slate-700 rounded-md shadow-lg py-1 z-50 border border-slate-600 animate-in fade-in zoom-in-95 duration-100">
+                                    <button onClick={() => { handleManualSave(); }} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 flex items-center gap-2">
+                                        <span className="w-4 h-4 flex items-center justify-center">💾</span>
+                                        <span>儲存專案</span>
+                                    </button>
+                                    <div className="border-t border-slate-600 my-1"></div>
                                     <button onClick={handleAddPages} className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 flex items-center gap-2">
                                         <PlusIcon className="w-4 h-4" /> 新增頁面/圖片
                                     </button>
@@ -3253,7 +3323,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                         <ShareIcon className="w-4 h-4" /> 儲存並分享
                                     </a>
                                     <div className="border-t border-slate-600 my-1"></div>
-                                    <a href="#" onClick={(e) => { e.preventDefault(); handleClose(); }} className="flex items-center gap-2 px-4 py-2 text-sm text-white hover:bg-slate-600">
+                                    <a href="#" onClick={(e) => { e.preventDefault(); handleCloseProject(); }} className="flex items-center gap-2 px-4 py-2 text-sm text-white hover:bg-slate-600">
                                         <XIcon className="w-4 h-4" /> 關閉
                                     </a>
                                 </div>
@@ -3541,7 +3611,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                         ))}
                     </div>
 
-                    <main id="main-editor-view" className="flex-1 p-4 flex flex-col relative overflow-hidden" style={{ backgroundImage: 'radial-gradient(circle at center, #1e293b 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
+                    <main id="main-editor-view" onWheel={handleMainWheel} className="flex-1 p-4 flex flex-col relative overflow-hidden" style={{ backgroundImage: 'radial-gradient(circle at center, #1e293b 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
                         <div className="flex-grow overflow-hidden flex items-center justify-center">
                             {viewedPage ? (
                                 <div className={`relative touch-none shadow-2xl ${activeTool === 'select-text' ? 'select-text' : 'select-none'}`} style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transition: 'transform 0.2s ease-in-out', transformOrigin: 'center center' }}>
@@ -3603,12 +3673,43 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
                         {/* Page Indicator - Bottom Center */}
                         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 bg-slate-800/30 backdrop-blur-md rounded-full px-4 py-2 text-white shadow-xl border border-slate-600/50 flex items-center gap-3">
-                            <span className="text-sm font-medium tabular-nums">
+                            <span
+                                className={`text-sm font-medium tabular-nums cursor-pointer hover:text-blue-300 transition-colors ${isEditingPage ? 'hidden' : 'block'}`}
+                                onClick={() => {
+                                    if (selectionMode === 'view') {
+                                        setIsEditingPage(true);
+                                        setPageInputValue(viewedPageIndex > -1 ? (viewedPageIndex + 1).toString() : '1');
+                                    }
+                                }}
+                                title="點擊輸入頁碼跳轉"
+                            >
                                 {selectionMode === 'view'
                                     ? `頁面 (${viewedPageIndex > -1 ? viewedPageIndex + 1 : 0}/${state.pages.length})`
                                     : `已選取 ${selectedPages.size}`
                                 }
                             </span>
+                            {isEditingPage && (
+                                <input
+                                    type="number"
+                                    className="w-20 bg-slate-700 text-white text-sm px-2 py-0.5 rounded border border-slate-500 focus:border-blue-500 outline-none"
+                                    value={pageInputValue}
+                                    autoFocus
+                                    onBlur={() => setIsEditingPage(false)}
+                                    onChange={(e) => setPageInputValue(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            const page = parseInt(pageInputValue);
+                                            if (!isNaN(page) && page >= 1 && page <= state.pages.length) {
+                                                const targetPageId = state.pages[page - 1].id;
+                                                setViewedPageId(targetPageId);
+                                            }
+                                            setIsEditingPage(false);
+                                        } else if (e.key === 'Escape') {
+                                            setIsEditingPage(false);
+                                        }
+                                    }}
+                                />
+                            )}
                             <button
                                 onClick={() => setSelectionMode(m => m === 'view' ? 'select' : 'view')}
                                 className={`p-1.5 rounded-full hover:bg-slate-700 transition-colors ${selectionMode === 'select' ? 'text-blue-400 bg-slate-700/50' : 'text-white'}`}
@@ -3852,61 +3953,55 @@ const App: React.FC = () => {
                         </header>
 
                         {/* Projects Grid */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        {/* Projects List (Vertical) */}
+                        <div className="flex flex-col gap-3">
                             {projects.map((project) => (
                                 <div
                                     key={project.id}
                                     onClick={() => handleOpenProject(project.id)}
-                                    className="group bg-slate-900/80 backdrop-blur-sm rounded-2xl border border-slate-800 p-0 hover:border-indigo-500/50 hover:shadow-xl hover:shadow-indigo-500/10 transition-all duration-300 cursor-pointer relative overflow-hidden flex flex-col h-64"
+                                    className="group bg-slate-900/80 backdrop-blur-sm rounded-xl border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800/80 transition-all duration-200 cursor-pointer flex items-center justify-between p-4 gap-4 shadow-sm hover:shadow-md"
                                 >
-                                    {/* Top Preview Area (Simulated) */}
-                                    <div className="flex-1 bg-slate-950/50 relative overflow-hidden p-6 flex items-center justify-center">
-                                        <div className="w-24 h-32 bg-white/5 border border-white/10 rounded shadow-2xl transform group-hover:scale-105 group-hover:-rotate-2 transition-transform duration-500 flex flex-col">
-                                            <div className="h-2 w-full bg-indigo-500/20 border-b border-indigo-500/10"></div>
-                                            <div className="flex-1 p-2 space-y-2">
-                                                <div className="h-1 w-3/4 bg-white/10 rounded"></div>
-                                                <div className="h-1 w-1/2 bg-white/10 rounded"></div>
-                                                <div className="h-1 w-full bg-white/5 rounded"></div>
-                                                <div className="h-1 w-full bg-white/5 rounded"></div>
+                                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                                        {/* Icon Placeholder */}
+                                        <div className="w-10 h-10 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+                                            <FileIcon className="w-5 h-5 text-indigo-400" />
+                                        </div>
+
+                                        {/* Info */}
+                                        <div className="flex flex-col min-w-0">
+                                            <h3 className="text-base font-semibold text-slate-200 truncate group-hover:text-white transition-colors">
+                                                {project.name}
+                                            </h3>
+                                            <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
+                                                <span>{project.pages?.length || 0} 頁</span>
+                                                <span className="w-1 h-1 rounded-full bg-slate-600"></span>
+                                                <span>{new Date(project.timestamp).toLocaleDateString()}</span>
                                             </div>
                                         </div>
-                                        {/* Floating Actions */}
-                                        <button
-                                            onClick={(e) => handleDeleteProject(project.id, e)}
-                                            className="absolute top-3 right-3 p-2 text-slate-400 hover:text-red-400 bg-slate-900/50 hover:bg-red-500/10 rounded-lg transition-all z-20"
-                                            title="刪除專案"
-                                        >
-                                            <TrashIcon className="w-4 h-4" />
-                                        </button>
                                     </div>
 
-                                    {/* Bottom Info Area */}
-                                    <div className="p-4 bg-slate-900 border-t border-slate-800 group-hover:border-indigo-500/20 transition-colors">
-                                        <h3 className="font-bold text-base mb-1 truncate text-slate-200 group-hover:text-indigo-300 transition-colors">{project.name}</h3>
-                                        <div className="grid grid-cols-2 gap-2 mt-3">
-                                            <div className="flex flex-col gap-0.5">
-                                                <span className="text-[10px] uppercase tracking-wider text-slate-600 font-semibold">編輯時間</span>
-                                                <span className="text-xs text-slate-400 font-medium">{formatDate(project.timestamp).split(' ')[0]}</span>
-                                                <span className="text-[10px] text-slate-500">{formatDate(project.timestamp).split(' ')[1]}</span>
-                                            </div>
-                                            <div className="flex flex-col gap-0.5 items-end">
-                                                <span className="text-[10px] uppercase tracking-wider text-slate-600 font-semibold">資訊</span>
-                                                <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
-                                                    {project.pageCount} 頁
-                                                </span>
-                                                <span className="text-[10px] text-slate-500">{formatBytes(project.fileSize)}</span>
-                                            </div>
-                                        </div>
+                                    {/* Actions */}
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={(e) => handleDeleteProject(project.id, e)}
+                                            className="p-2 text-slate-500 hover:text-red-400 hover:bg-slate-700/50 rounded-lg transition-colors"
+                                            title="刪除專案"
+                                        >
+                                            <TrashIcon className="w-5 h-5" />
+                                        </button>
+                                        <div className="w-px h-8 bg-slate-700/50 mx-1 hidden sm:block"></div>
+                                        <ChevronRightIcon className="w-5 h-5 text-slate-600 group-hover:text-indigo-400 transition-colors" />
                                     </div>
                                 </div>
                             ))}
 
                             {projects.length === 0 && (
-                                <div className="col-span-full flex flex-col items-center justify-center py-32 text-slate-500 border border-dashed border-slate-800 rounded-3xl bg-slate-900/30">
-                                    <div className="bg-slate-800 p-5 rounded-full mb-6 shadow-inner ring-1 ring-white/5">
-                                        <FolderOpenIcon className="w-10 h-10 opacity-40" />
+                                <div className="text-center py-20 border-2 border-dashed border-slate-800 rounded-2xl bg-slate-900/30">
+                                    <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                                        <FolderOpenIcon className="w-8 h-8 text-slate-600" />
                                     </div>
-                                    <p className="text-lg font-medium text-slate-400">尚無專案</p>
+                                    <h3 className="text-lg font-medium text-slate-400">尚無專案</h3>
+                                    <p className="text-slate-500 text-sm mt-1">點擊上方按鈕開始建立新專案</p>
                                     <button onClick={() => fileInputRef.current?.click()} className="mt-4 text-sm text-indigo-400 hover:text-indigo-300 underline underline-offset-4">
                                         立即建立新專案
                                     </button>
