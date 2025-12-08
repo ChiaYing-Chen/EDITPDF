@@ -3247,9 +3247,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
                         <div className="flex md:flex-row flex-col items-center gap-2">
                             <button onClick={() => setActiveTool('move')} title="移動" className={`p-2 rounded-full transition-all ${activeTool === 'move' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <HandIcon className="w-5 h-5" /> </button>
-                            {isMobile && (
-                                <button onClick={() => setActiveTool('select-object' as any)} title="選取物件" className={`p-2 rounded-full transition-all ${activeTool === 'select-object' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <CursorArrowIcon className="w-5 h-5" /> </button>
-                            )}
+                            <button onClick={() => setActiveTool('select-object' as any)} title="選取物件" className={`p-2 rounded-full transition-all ${activeTool === 'select-object' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}> <CursorArrowIcon className="w-5 h-5" /> </button>
 
                             {/* Mobile Resize Button */}
                             {isMobile && selectedObjectId && (
@@ -3422,7 +3420,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 onDragOver={(e) => e.preventDefault()}
                                 onDrop={() => handleDrop(page.id)}
                                 onDragEnd={() => setDraggedId(null)}
-                                onClick={() => handleThumbnailClick(page.id)}>
+                                onClick={() => handleThumbnailClick(page.id)}
+                                className={`
+                                    relative h-20 group cursor-pointer rounded-md overflow-hidden flex-shrink-0 border-2 transition-all
+                                    ${selectedPages.has(page.id) ? 'border-blue-500 ring-1 ring-blue-500' : 'border-transparent hover:border-slate-600'}
+                                    ${viewedPageId === page.id && !selectedPages.has(page.id) ? 'border-slate-500' : ''}
+                                    ${draggedId === page.id ? 'opacity-50' : ''}
+                                `}
+                            >
                                 {page.source.type === 'pdf' ? (
                                     <div className="w-full h-full p-0.5 flex items-center justify-center overflow-hidden bg-white">
                                         <div className="pointer-events-none origin-center w-full h-full flex items-center justify-center">
