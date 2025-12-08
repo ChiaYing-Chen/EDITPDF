@@ -4,6 +4,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import Dexie, { type Table } from 'dexie';
 import PDFPageView from './PDFPageView';
 import TextEditorModal from './TextEditorModal';
+import ObjectResizeModal from './ObjectResizeModal';
 import { ProjectMetadata, StoredProject, EditorPageState, CompressionQuality, EditorObject, DrawingTool, PageData, StampConfig } from './types';
 import TriangleSizeSlider from './TriangleSizeSlider';
 
@@ -25,19 +26,17 @@ const formatDate = (timestamp: number) => {
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
-        hour: '2-digit',
         minute: '2-digit',
         hour12: false
     });
 };
 
-
-// --- Icons ---
 const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
     </svg>
 );
+
 const MinusIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
@@ -216,7 +215,7 @@ const dbService = {
             // If fileSize is missing (old data), calculate it roughly from blobs
             fileSize: fileSize ?? (
                 (pdfAssets ? Object.values(pdfAssets).reduce((acc, blob) => acc + blob.size, 0) : 0) +
-                pages.reduce((acc, page: any) => acc + (page.source ? (page.source.type === 'image' ? page.source.data.size : 0) : (page.data ? page.data.size : 0)), 0)
+                pages.reduce((acc, page: any) => acc + (page.source ? (page.source.type === 'image' && page.source.data ? (page.source.data as any).size : 0) : (page.data ? (page.data as any).size : 0)), 0)
             )
         }));
     },
@@ -2571,8 +2570,13 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         setActionState({ type: 'idle' }); setPreviewObject(null);
     };
 
+    const [showResizeModal, setShowResizeModal] = useState(false);
+    const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const isLongPressActiveRef = useRef(false);
+
     const handleCanvasTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
         if (e.touches.length === 2) {
+            if (isLongPressActiveRef.current) return; // Don't allow pinch if moving object
             if (isDrawingToolActive) { e.preventDefault(); return; }
             e.preventDefault();
             const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
@@ -2601,29 +2605,82 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
             // 2. EDIT TOOLS: Object Interaction & Creation
 
-            // Check for handle first (Resizing)
-            let scale = 1;
-            if (viewedPage?.source.type === 'image' && backgroundRef.current) {
-                const img = backgroundRef.current as HTMLImageElement;
-                if (img.naturalWidth) { scale = img.clientWidth / img.naturalWidth; }
-            }
-            const handle = getHandleAtPoint(startPoint, selectedObject, scale * zoom);
-            if (handle) {
-                setActionState({ type: 'resizing', startPoint, handle, initialObject: selectedObject! });
-                return;
+            // Mobile: Check for Resize Button Hit
+            if (isMobile && selectedObject) {
+                const { sp, ep } = selectedObject;
+                const minX = Math.min(sp.x, ep.x); const maxX = Math.max(sp.x, ep.x);
+                const minY = Math.min(sp.y, ep.y); const maxY = Math.max(sp.y, ep.y);
+
+                // Calculate Resize Button Position (Bottom Right, slightly offset)
+                const buttonSize = 32 / zoom; // Scale button hit area with zoom? No, fixed screen size usually better.
+                // Actually, getCanvasCoordinates gives us canvas units. 
+                // We drew the button at maxX + 20/zoom, maxY + 20/zoom in draw loop?
+                // Let's align with where we draw it.
+                // We need to know where we drew it.
+                // Let's assume we draw it at bottom-right corner.
+
+                // Check distance to bottom-right corner
+                const dx = startPoint.x - maxX;
+                const dy = startPoint.y - maxY;
+                const dist = Math.hypot(dx, dy);
+
+                // Hit area radius 25px in screen space -> 25 / zoom in canvas space
+                if (dist < 40 / zoom) {
+                    setShowResizeModal(true);
+                    return;
+                }
             }
 
-            // Check for Object Hit (Moving)
-            const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
-            if (objectToSelect) {
-                if (objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) { setTargetObjectId(objectToSelect.id); objectImageInputRef.current?.click(); return; }
-                setSelectedObjectId(objectToSelect.id);
-                setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
-                return;
+
+            // Mobile Long Press Logic for Moving
+            if (isMobile) {
+                const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
+                if (objectToSelect) {
+                    // Start Timer
+                    longPressTimerRef.current = setTimeout(() => {
+                        isLongPressActiveRef.current = true;
+                        setSelectedObjectId(objectToSelect.id);
+                        setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
+                        // Vibrate if available
+                        if (navigator.vibrate) navigator.vibrate(50);
+                    }, 500); // 500ms long press
+
+                    // Do NOT set actionState yet. Just wait.
+                    // But we need to prevent default scrolling?
+                    // e.preventDefault(); // Maybe?
+                    return;
+                }
+            } else {
+                // DESKTOP / OLD LOGIC
+                // Check for handle first (Resizing)
+                let scale = 1;
+                if (viewedPage?.source.type === 'image' && backgroundRef.current) {
+                    const img = backgroundRef.current as HTMLImageElement;
+                    if (img.naturalWidth) { scale = img.clientWidth / img.naturalWidth; }
+                }
+                const handle = getHandleAtPoint(startPoint, selectedObject, scale * zoom);
+                if (handle) {
+                    setActionState({ type: 'resizing', startPoint, handle, initialObject: selectedObject! });
+                    return;
+                }
+
+                // Check for Object Hit (Moving)
+                const objectToSelect = getObjectAtPoint(startPoint, viewedPage.objects);
+                if (objectToSelect) {
+                    if (objectToSelect.type === 'image-placeholder' && !objectToSelect.imageData) { setTargetObjectId(objectToSelect.id); objectImageInputRef.current?.click(); return; }
+                    setSelectedObjectId(objectToSelect.id);
+                    setActionState({ type: 'moving', startPoint, initialObject: objectToSelect });
+                    return;
+                }
             }
 
             // 3. DRAWING / CREATION (No Panning)
-            if (activeTool !== 'text') {
+            // On mobile, if long press timer is running, we wait.
+            // If user moves finger before timer, we cancel timer and treat as... scroll? or drawing?
+            // If it's a tap (start+end fast), it selects.
+
+            if (activeTool !== 'text' && !longPressTimerRef.current) {
+                // Only draw if not potentially selecting/moving
                 e.preventDefault(); // Prevent scroll
                 setActionState({ type: 'drawing', startPoint });
             }
@@ -2631,7 +2688,18 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     };
 
     const handleCanvasTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+        // Cancel long press if moved too much before activation
+        if (longPressTimerRef.current && !isLongPressActiveRef.current) {
+            const touch = e.touches[0];
+            // We need start pos to check distance. 
+            // Ideally we store start pos in ref.
+            // For now, aggressive cancellation: any move cancels long press wait.
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
+
         if (pinchState.current.isPinching && e.touches.length === 2) {
+            // ... existing pinch logic
             if (isDrawingToolActive) return;
             e.preventDefault();
             const newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
@@ -2656,6 +2724,44 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
     };
 
     const handleCanvasTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+        if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
+
+        if (isLongPressActiveRef.current) {
+            isLongPressActiveRef.current = false;
+            // End moving action
+            handleCanvasMouseUp(e as unknown as React.MouseEvent<HTMLCanvasElement>);
+            return;
+        }
+
+        // If it was a quick tap (no move, no long press activation)
+        if (!actionState.type || actionState.type === 'idle') {
+            // Handle selection on tap
+            const startPoint = getCanvasCoordinates(e as unknown as any); // Use last known pos or calculate? Touchend has no touches. 
+            // We need changedTouches.
+            const touch = e.changedTouches[0];
+            // Re-calculate point manualy because getCanvasCoordinates uses e.touches[0] primarily
+            // Actually my helper supports changedTouches.
+            const tapPoint = getCanvasCoordinates(e);
+
+            // Check for object hit to SELECT
+            if (isMobile && activeTool !== 'move') {
+                const objectToSelect = getObjectAtPoint(tapPoint, viewedPage.objects);
+                if (objectToSelect) {
+                    e.preventDefault(); // Stop default click?
+                    setSelectedObjectId(objectToSelect.id);
+                    // Don't start moving. Just select.
+                    return;
+                } else {
+                    // If tapped empty space, maybe clear selection
+                    setSelectedObjectId(null);
+                }
+            }
+        }
+
+
         if (pinchState.current.isPinching) {
             // FIX: If less than 2 fingers are touching, we must stop pinching immediately.
             if (e.touches.length < 2) {
@@ -2864,18 +2970,48 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         if (currentSelectedObject) {
             const { sp, ep } = currentSelectedObject; const x = Math.min(sp.x, ep.x); const y = Math.min(sp.y, ep.y); const w = Math.abs(sp.x - ep.x); const h = Math.abs(sp.y - ep.y);
             ctx.strokeStyle = 'rgba(0, 123, 255, 0.7)'; ctx.lineWidth = 1; ctx.setLineDash([5, 5]); ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
-            const handles = getHandlesForObject(currentSelectedObject);
             const isLockedImage = currentSelectedObject.type === 'image-placeholder' && currentSelectedObject.imageData;
-            // Always show handles, just style them. For locked images (overlays), show distinct handles.
-            ctx.fillStyle = 'white'; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2; // Blue border
-            Object.values(handles).forEach(pos => {
+
+            if (isMobile) {
+                // Mobile: Draw selection box but NO handles. Draw Resize Button.
+                // Draw Resize Button at Bottom Right
+                const btnSize = 25 / zoom; // Visual radius
+                const bx = Math.max(sp.x, ep.x);
+                const by = Math.max(sp.y, ep.y);
+
                 ctx.beginPath();
-                ctx.arc(pos.x, pos.y, 10, 0, 2 * Math.PI); // Circular handle (Radius 10)
+                ctx.arc(bx, by, btnSize, 0, 2 * Math.PI);
+                ctx.fillStyle = '#2563eb';
                 ctx.fill();
+                ctx.lineWidth = 2 / zoom;
+                ctx.strokeStyle = '#white';
                 ctx.stroke();
-            });
+
+                // Draw Icon (Just simplified lines)
+                ctx.beginPath();
+                ctx.strokeStyle = 'white';
+                ctx.moveTo(bx - btnSize * 0.5, by - btnSize * 0.5);
+                ctx.lineTo(bx + btnSize * 0.5, by + btnSize * 0.5);
+                ctx.moveTo(bx - btnSize * 0.2, by - btnSize * 0.5);
+                ctx.lineTo(bx + btnSize * 0.5, by + btnSize * 0.2);
+                ctx.moveTo(bx - btnSize * 0.5, by + btnSize * 0.2);
+                ctx.lineTo(bx - btnSize * 0.2, by + btnSize * 0.5);
+                ctx.stroke();
+
+            } else {
+                // Desktop: Draw handles
+                const handles = getHandlesForObject(currentSelectedObject);
+                // Always show handles, just style them. For locked images (overlays), show distinct handles.
+                ctx.fillStyle = 'white'; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2; // Blue border
+                Object.values(handles).forEach(pos => {
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 10, 0, 2 * Math.PI); // Circular handle (Radius 10)
+                    ctx.fill();
+                    ctx.stroke();
+                });
+            }
         }
-    }, [viewedPage, selectedObjectId, selectedObject, previewObject, zoom, pan, imageLoadedCount]);
+    }, [viewedPage, selectedObjectId, selectedObject, previewObject, zoom, pan, imageLoadedCount, isMobile]);
 
     useEffect(() => {
         const canvas = canvasRef.current; if (!canvas) return;
@@ -2904,6 +3040,46 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 stamps={stamps}
                 onSelect={handleStampToolSelect}
                 onManage={() => { setShowStampPicker(false); setShowStampSettings(true); }}
+            />
+
+            <ObjectResizeModal
+                isOpen={showResizeModal}
+                object={selectedObject}
+                onClose={() => setShowResizeModal(false)}
+                onConfirm={(scaleFactor) => {
+                    if (selectedObject && viewedPageId) {
+                        const newObjects = state.pages.find(p => p.id === viewedPageId)?.objects.map(obj => {
+                            if (obj.id === selectedObject.id) {
+                                // Apply scale
+                                if (obj.fontSize) obj.fontSize *= scaleFactor;
+                                if (obj.strokeWidth) obj.strokeWidth *= scaleFactor;
+                                // For shapes/images directly use bounds?
+                                // Our rects are defined by sp/ep.
+                                // We can scale width/height relative to center?
+                                const w = obj.ep.x - obj.sp.x;
+                                const h = obj.ep.y - obj.sp.y;
+                                const cx = obj.sp.x + w / 2;
+                                const cy = obj.sp.y + h / 2;
+
+                                const newW = w * scaleFactor;
+                                const newH = h * scaleFactor;
+
+                                obj.sp.x = cx - newW / 2;
+                                obj.sp.y = cy - newH / 2;
+                                obj.ep.x = cx + newW / 2;
+                                obj.ep.y = cy + newH / 2;
+                                return { ...obj };
+                            }
+                            return obj;
+                        });
+
+                        if (newObjects) {
+                            const newState = { ...state, pages: state.pages.map(p => p.id === viewedPageId ? { ...p, objects: newObjects } : p) };
+                            updateState(newState);
+                        }
+                    }
+                    setShowResizeModal(false);
+                }}
             />
 
             {/* Compression Modal */}
