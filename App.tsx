@@ -1322,28 +1322,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
 
     // ... (State management, undo/redo, compression logic unchanged)
     // --- Scroll Navigation Logic ---
-    const handleMainWheel = (e: React.WheelEvent) => {
-        if (e.ctrlKey) return; // Let zoom handle ctrl+scroll
-        // Only handle vertical scroll significantly
-        if (Math.abs(e.deltaY) < 30) return;
-
-        if (Date.now() - lastScrollTime.current < 150) return; // Throttle 200ms
-
-        if (e.deltaY > 0) {
-            // Scroll Down -> Next Page
-            if (viewedPageIndex < state.pages.length - 1) {
-                setViewedPageId(state.pages[viewedPageIndex + 1].id);
-                lastScrollTime.current = Date.now();
-            }
-        } else {
-            // Scroll Up -> Prev Page
-            if (viewedPageIndex > 0) {
-                setViewedPageId(state.pages[viewedPageIndex - 1].id);
-                lastScrollTime.current = Date.now();
-            }
-        }
-    };
-
+    // --- Compression Logic ---
     const handleCompress = async () => {
         // ... (existing compress logic)
         setIsLoading(true);
@@ -2260,12 +2239,27 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             }
             const now = Date.now();
             if (now - lastScrollTime.current < 200) return;
+
+            let nextId = null;
             if (e.deltaY > 0) {
                 const idx = state.pages.findIndex(p => p.id === viewedPageId);
-                if (idx < state.pages.length - 1) { const nextId = state.pages[idx + 1].id; setViewedPageId(nextId); lastScrollTime.current = now; scrollToThumbnail(nextId); }
+                if (idx < state.pages.length - 1) {
+                    nextId = state.pages[idx + 1].id;
+                }
             } else if (e.deltaY < 0) {
                 const idx = state.pages.findIndex(p => p.id === viewedPageId);
-                if (idx > 0) { const prevId = state.pages[idx - 1].id; setViewedPageId(prevId); lastScrollTime.current = now; scrollToThumbnail(prevId); }
+                if (idx > 0) {
+                    nextId = state.pages[idx - 1].id;
+                }
+            }
+
+            if (nextId) {
+                setViewedPageId(nextId);
+                if (selectionMode === 'view') {
+                    setSelectedPages(new Set([nextId]));
+                }
+                lastScrollTime.current = now;
+                scrollToThumbnail(nextId);
             }
         };
 
@@ -2370,7 +2364,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 mainElement.removeEventListener('touchend', handleMainTouchEnd);
             }
         };
-    }, [isDrawingToolActive, state.pages, viewedPageId, selectedObjectId]);
+    }, [isDrawingToolActive, state.pages, viewedPageId, selectedObjectId, selectionMode]);
 
 
     // Toolbar Drag Handlers for Mobile
@@ -3616,7 +3610,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                         ))}
                     </div>
 
-                    <main id="main-editor-view" onWheel={handleMainWheel} className="flex-1 p-4 flex flex-col relative overflow-hidden" style={{ backgroundImage: 'radial-gradient(circle at center, #1e293b 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
+                    <main id="main-editor-view" className="flex-1 p-4 flex flex-col relative overflow-hidden" style={{ backgroundImage: 'radial-gradient(circle at center, #1e293b 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
                         <div className="flex-grow overflow-hidden flex items-center justify-center">
                             {viewedPage ? (
                                 <div className={`relative touch-none shadow-2xl ${activeTool === 'select-text' ? 'select-text' : 'select-none'}`} style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transition: 'transform 0.2s ease-in-out', transformOrigin: 'center center' }}>
@@ -3707,6 +3701,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                             if (!isNaN(page) && page >= 1 && page <= state.pages.length) {
                                                 const targetPageId = state.pages[page - 1].id;
                                                 setViewedPageId(targetPageId);
+                                                if (selectionMode === 'view') {
+                                                    setSelectedPages(new Set([targetPageId]));
+                                                }
                                             }
                                             setIsEditingPage(false);
                                         } else if (e.key === 'Escape') {
