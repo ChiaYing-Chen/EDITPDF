@@ -2052,6 +2052,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
             fontSize: stamp.fontSize
         });
         setShowStampPicker(false);
+        setActiveTool('move');
     };
 
     useEffect(() => {
@@ -2485,7 +2486,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 changesMade = true;
                 setSelectedObjectId(newObject.id);
                 // Keep tool active
-                // setActiveTool('move');
+                setActiveTool('move');
                 // setActiveStamp(null); // Keep stamp active
             } else if (activeTool === 'text' && pendingTextConfig) {
                 const canvas = canvasRef.current;
@@ -2516,7 +2517,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 changesMade = true;
                 setSelectedObjectId(newObject.id);
                 // Keep tool active
-                // setActiveTool('move');
+                setActiveTool('move');
                 // setPendingTextConfig(null); // Keep text config active
             } else if (activeTool === 'image-placeholder') {
                 const newObject: EditorObject = { id: `obj_${Date.now()}`, type: 'image-placeholder', sp: startPoint, ep: endPoint, color: '#FF69B4', strokeWidth: 2 };
@@ -2524,7 +2525,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                 setTargetObjectId(newObject.id);
                 setSelectedObjectId(newObject.id);
                 // Keep tool active
-                // setActiveTool('move');
+                setActiveTool('move');
                 setTimeout(() => {
                     const input = objectImageInputRef.current;
                     if (input) {
@@ -2790,6 +2791,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         setFontFamily(fontFamily);
         setTextBackgroundColor(backgroundColor);
         setShowTextModal(false);
+        setActiveTool('move');
     };
 
     useEffect(() => {
@@ -2945,13 +2947,18 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
         const currentSelectedObject = previewObject && previewObject.id === selectedObjectId ? previewObject : selectedObject;
         if (currentSelectedObject) {
             const { sp, ep } = currentSelectedObject; const x = Math.min(sp.x, ep.x); const y = Math.min(sp.y, ep.y); const w = Math.abs(sp.x - ep.x); const h = Math.abs(sp.y - ep.y);
-            ctx.strokeStyle = 'rgba(0, 123, 255, 0.7)'; ctx.lineWidth = 1; ctx.setLineDash([5, 5]); ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
-            const isLockedImage = currentSelectedObject.type === 'image-placeholder' && currentSelectedObject.imageData;
 
             if (isMobile) {
                 // Mobile: Draw selection box but NO handles.
+                // Solid, thicker blue line for visibility
+                ctx.strokeStyle = '#2563eb';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([]); // Solid line
+                ctx.strokeRect(x, y, w, h);
+
                 // Resize Button is now in Floating Toolbar.
             } else {
+                ctx.strokeStyle = 'rgba(0, 123, 255, 0.7)'; ctx.lineWidth = 1; ctx.setLineDash([5, 5]); ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
                 // Desktop: Draw handles
                 const handles = getHandlesForObject(currentSelectedObject);
                 // Always show handles, just style them. For locked images (overlays), show distinct handles.
@@ -3390,7 +3397,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 onDrop={() => handleDrop(page.id)}
                                 onDragEnd={() => setDraggedId(null)}
                                 className={`
-                                    relative h-20 min-w-[3.5rem] group cursor-pointer rounded-md overflow-hidden flex-shrink-0 border-2 transition-all
+                                    relative h-20 group cursor-pointer rounded-md overflow-hidden flex-shrink-0 border-2 transition-all
+                                    ${page.rotation % 180 !== 0 ? 'aspect-[4/3]' : 'aspect-[3/4]'}
                                     ${selectedPages.has(page.id) ? 'border-blue-500 ring-1 ring-blue-500' : 'border-transparent hover:border-slate-600'}
                                     ${viewedPageId === page.id && !selectedPages.has(page.id) ? 'border-slate-500' : ''}
                                     ${draggedId === page.id ? 'opacity-50' : ''}
@@ -3398,7 +3406,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 onClick={() => handleThumbnailClick(page.id)}
                             >
                                 {page.source.type === 'pdf' ? (
-                                    <div className="h-full w-auto p-0.5 flex items-center justify-center overflow-hidden bg-white">
+                                    <div className="w-full h-full p-0.5 flex items-center justify-center overflow-hidden bg-white">
                                         <div className="pointer-events-none origin-center w-full h-full flex items-center justify-center">
                                             <PDFPageView
                                                 pdfBlob={state.pdfAssets?.[page.source.pdfId]}
@@ -3412,7 +3420,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ project, onSave, onClose }) => 
                                 ) : (
                                     <img
                                         src={pageUrlCache.get(page.id)}
-                                        className="h-full w-auto object-contain bg-slate-900"
+                                        className="w-full h-full object-contain bg-slate-900"
                                         style={{ transform: `rotate(${page.rotation}deg)` }}
                                         alt={`Page ${index + 1}`}
                                     />
